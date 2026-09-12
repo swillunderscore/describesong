@@ -565,3 +565,25 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   Speech, and NO clapping (he labelled claps yes; the tagger's recall on that
   track is nil — precision was what we measured). 16 s for two tracks incl.
   model load. No console errors.
+
+### FIXED 2026-09-12 — the first library re-scan (42 tracks in 14 min, ✗ and =)
+- Bug 1: the tagger was loaded once PER CALL. The scan runs several tracks
+  at once, so a fresh worker started four 174 MB model instantiations side
+  by side; most failed, each ✗ took ~20 s, and events.json was re-fetched
+  for every track (the 304 flood in the Pi log). Now one shared load, a
+  ladder (fp16 WebGPU → q8 WASM), and a spent ladder fails fast.
+- Bug 2: a known track whose file tags matched the stored label returned
+  before submitting — "already in, same label" — so its tagged sounds were
+  thrown away. Now submitted when there is anything to submit.
+- Bug 3: the 48→16 kHz step was a 3-tap average (aliasing). Now a 33-tap
+  windowed-sinc low-pass. Verified against the PyTorch reference model on
+  the same file: Guitar 0.11 / 0.11, Singing 0.10 / 0.11, Speech 0.07 / 0.05;
+  fp16 WebGPU, fp32 WebGPU and q8 WASM agree within 0.02 (in-page test).
+- "Guitar" and "Singing" were missing from the class list. Added (93 now).
+- The ✗ line now names the stage ("sounds not tagged — …"); the finish line
+  counts "N without sounds". DONE memory bumped to v3 so files the broken
+  scan marked finished are looked at again.
+- Water: an opaque canvas switched on while paused for a scan (or resized
+  while paused) had never been drawn → black. A frame is always drawn before
+  it is trusted; a lost GL context hides the canvas and rebuilds on restore.
+- Throughput after the fix, scratch server: four known tracks in 5 s.

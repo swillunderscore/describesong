@@ -33,11 +33,16 @@ async function initAst() {
   })().finally(() => { astReady = null; });
   await astReady;
 }
-// 48 kHz -> 16 kHz: a short low-pass then every third sample. Classification
-// is indifferent to the last dB of the top octave.
+// 48 kHz -> 16 kHz: a 33-tap windowed-sinc low-pass at 7.2 kHz, then every
+// third sample. The first version was a 3-tap average, which let the top two
+// octaves alias into the band; against the reference PyTorch model on the
+// same file the browser's probabilities came out about half as high.
+const LP = (() => { const N = 33, h = new Float32Array(N), fc = 0.15; let s = 0;
+  for (let i = 0; i < N; i++) { const n = i - (N - 1) / 2, v = n === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * n) / (Math.PI * n), w = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (N - 1)); h[i] = v * w; s += h[i]; }
+  for (let i = 0; i < N; i++) h[i] /= s; return h; })();
 function to16k(x) {
-  const n = Math.floor(x.length / 3), y = new Float32Array(n);
-  for (let i = 0; i < n; i++) { const j = i * 3; y[i] = 0.25 * (x[j - 1] || 0) + 0.5 * x[j] + 0.25 * (x[j + 1] || 0); }
+  const n = Math.floor(x.length / 3), y = new Float32Array(n), N = LP.length, M = (N - 1) / 2;
+  for (let i = 0; i < n; i++) { const c = i * 3; let a = 0; for (let k = 0; k < N; k++) { const j = c + k - M; if (j >= 0 && j < x.length) a += LP[k] * x[j]; } y[i] = a; }
   return y;
 }
 async function tagEvents(pcm, sampleRate) {

@@ -211,7 +211,7 @@ $("#stop").onclick = () => { stopRequested = true; $("#stop").textContent = "sto
 // Closing or leaving the tab kills the worker mid-scan. Finished tracks are
 // already on the server (and skipped next time), but ask before losing the rest.
 window.addEventListener("beforeunload", ev => { if (scanning) { ev.preventDefault(); ev.returnValue = ""; } });
-const DONE_KEY = "describesong.done.v2";   // v2: files finished before the sound tagger existed are looked at again (identify is cheap; known tracks with events skip)
+const DONE_KEY = "describesong.done.v3";   // v2: files finished before the sound tagger existed are looked at again (identify is cheap; known tracks with events skip)
 const doneKey = f => `${f.name}|${f.size}|${f.lastModified}`;
 function loadDone() { try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]")); } catch { return new Set(); } }
 function saveDone(set) { try { localStorage.setItem(DONE_KEY, JSON.stringify([...set])); } catch {} }
@@ -278,7 +278,7 @@ async function scan(all) {
       const facts = { year: tags.year || null, genre: tags.genre || null };
       if (!idr.mbid && idr.prior && (idr.prior.artist || idr.prior.title)) {
         if (normL(idr.prior) === normL(label)) {
-          if (!r) { log(`= ${label.artist || "?"} — ${label.title || f.name} (already in, same label)`); return; }   // nothing new to say
+          if (!r && !ev) { log(`= ${label.artist || "?"} — ${label.title || f.name} (already in, same label)`); return; }   // nothing new to say (with sounds tagged there is)
         } else {
           const ok = await confirmSerial(idr.prior, label);
           if (ok) label = { artist: idr.prior.artist, title: idr.prior.title, album: idr.prior.album };
