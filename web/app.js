@@ -99,7 +99,7 @@ $("#f").addEventListener("submit", async e => {
     const more = document.createElement("div"); more.id = "more"; more.innerHTML = '<span class="spin"></span>Checking every track…'; $("#res").appendChild(more);
     const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE + "&exact=1").catch(() => null);
     if (mine !== seqNo) return;
-    if (ex && ex.ok) { const rr = await ex.json(); $("#res").innerHTML = ""; appendResults(rr.results, 0); cur.exact = true; cur.offset = rr.results.length; cur.done = rr.results.length < PAGE; sentinel();
+    if (ex && ex.ok) { const rr = await ex.json(); more.remove(); swapResults(rr.results); cur.exact = true; cur.offset = rr.results.length; cur.done = rr.results.length < PAGE; sentinel();
       const d = document.createElement("div"); d.id = "more"; d.textContent = "Checked every track."; $("#res").appendChild(d); }
     else more.remove();                                    // 503 = the server was busy; the fast answer stands
   }
@@ -117,18 +117,46 @@ function sentinel() {
   let s = $("#sentinel"); if (s) s.remove();
   if (cur && !cur.done) { s = document.createElement("div"); s.id = "sentinel"; s.style.height = "1px"; $("#res").appendChild(s); io.observe(s); }
 }
-function appendResults(results, start) {
-  const frag = document.createElement("template");
-  frag.innerHTML = results.map((t, i) => `
-    <article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
+function rowHtml(t, i, start) {
+  return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div>
         <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
       <span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>
-    </article>`).join("");
+    </article>`;
+}
+function appendResults(results, start) {
+  const frag = document.createElement("template");
+  frag.innerHTML = results.map((t, i) => rowHtml(t, i, start)).join("");
   const more = $("#more"); const anchor = $("#sentinel") || more;
   if (anchor) $("#res").insertBefore(frag.content, anchor); else $("#res").appendChild(frag.content);
+}
+// Replace the list with the exact one, animated: rows keep their identity by
+// track id — the ones that stay slide to their new rank, newcomers fade in,
+// the ones that fall off fade out. (FLIP: measure, swap, invert, play.)
+function swapResults(results) {
+  const res = $("#res"), before = new Map();
+  for (const el of res.querySelectorAll(".hit")) before.set(el.dataset.id, el.getBoundingClientRect().top);
+  const keep = new Set(results.map(t => String(t.id)));
+  const leaving = [...res.querySelectorAll(".hit")].filter(el => !keep.has(el.dataset.id));
+  for (const el of leaving) { el.style.transition = "opacity .35s, transform .35s"; el.style.opacity = "0"; el.style.transform = "scale(.98)"; el.style.pointerEvents = "none"; }
+  setTimeout(() => {
+    for (const el of leaving) el.remove();
+    const old = new Map(); for (const el of res.querySelectorAll(".hit")) old.set(el.dataset.id, el);
+    res.querySelectorAll(".hit, #sentinel").forEach(el => el.remove());
+    results.forEach((t, i) => {
+      let el = old.get(String(t.id));
+      if (el) { el.querySelector(".n").textContent = String(i + 1).padStart(2, "0"); el.querySelector(".ring").style.setProperty("--p", t.confidence); el.querySelector(".ring span").textContent = t.confidence; el.style.animation = "none"; }
+      else { const tpl = document.createElement("template"); tpl.innerHTML = rowHtml(t, i, 0); el = tpl.content.firstElementChild; el.style.opacity = "0"; }
+      res.appendChild(el);
+    });
+    for (const el of res.querySelectorAll(".hit")) {
+      const from = before.get(el.dataset.id);
+      if (from != null) { const dy = from - el.getBoundingClientRect().top; if (dy) { el.style.transition = "none"; el.style.transform = `translateY(${dy}px)`; requestAnimationFrame(() => { el.style.transition = "transform .55s cubic-bezier(.2,.8,.2,1)"; el.style.transform = ""; }); } }
+      else requestAnimationFrame(() => { el.style.transition = "opacity .45s"; el.style.opacity = "1"; });
+    }
+  }, leaving.length ? 350 : 0);
 }
 // "What the index hears": the track's vector read back as the phrases it sits
 // closest to — the words that would find it. Fetched on demand, per track.
