@@ -377,3 +377,14 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   the probes too few; both fixed. Startup loader streams rows (a million bytes
   objects at once would have blown the 1.5 GB cap).
 - Pi proof at 600k inside the capped container: see the line below.
+- PI PROOF (600k realistic vectors, 2026-09-12): load 18 s, first build 108 s,
+  IVF search 8.0 ms median / 27 ms p95, exact scan 0.78 s, recall@10 vs exact
+  0.991 (min 0.9), +12% growth → rebuild fired, 149 s. Bench RSS 1.0 GB steady
+  (600 MB of it the memmap = reclaimable page cache), 1.9 GB peak during the
+  growth rebuild WITH the generator's own arrays.
+- CAVEAT found by the run: "kernel does not support memory limit capabilities"
+  — this Pi's kernel has no cgroup memory controller, so the unit's --memory
+  1500m is NOT enforced (never was). Enabling it needs `cgroup_enable=memory
+  cgroup_memory=1` in /boot/firmware/cmdline.txt + reboot — his call. Memory
+  today: ~0.5 GB resident + 64 MB per million tracks of codes; the vectors
+  themselves live in page cache.
