@@ -140,3 +140,10 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 /* "go by sound alone": for songs the internet has nothing written about */
 .soundonly { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink2); cursor: pointer; margin: -2px 0 10px }
 .soundonly input { accent-color: var(--ink); width: 15px; height: 15px; cursor: pointer }
+
+/* Header: the wordmark and the two counts sit ON the panel, no plate behind
+   them. The boxes read as chrome; the words are the thing. */
+.top > .brand, .top > .stat { background: none !important; padding-left: 0; padding-right: 0 }
+.top > .brand { padding: 6px 0; margin-right: 6px }
+.top > .stat { margin-right: 18px }
+.top > .brand:where(a):hover { filter: none; opacity: .75 }
