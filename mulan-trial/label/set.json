@@ -1,0 +1,1037 @@
+[
+ {
+  "path": "Vince Guaraldi Trio/A Charlie Brown Christmas [2012 Remastered & Expanded Edition]/07 - Skating.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 0
+ },
+ {
+  "path": "Smooth McGroove/VGM Acapella Volume 6/Smooth McGroove - Sonic - Star Light Zone.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 1
+ },
+ {
+  "path": "Kendrick Lamar/good kid, m.A.A.d city (Deluxe)/02 - Bitch, Don\u2019t Kill My Vibe.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 2
+ },
+ {
+  "path": "BROCKHAMPTON/SATURATION III/06 - STUPID.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 3
+ },
+ {
+  "path": "Louis The Child/Love Is Alive EP/05 - World On Fire.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 4
+ },
+ {
+  "path": "Onra/Chinoiseries Pt.3/12 - Tea Vender On the Street.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 5
+ },
+ {
+  "path": "Lady Gaga/Alejandro/04 - Alejandro - Skrillex Remix.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 6
+ },
+ {
+  "path": "Leon Noel/Leon Noel & Roy Altice/Leon Noel - Un Petit Bossanova.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 7
+ },
+ {
+  "path": "Jinsang/Life/05 - Herewego.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 8
+ },
+ {
+  "path": "Smino/blkswn/15 - Innamission.mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 9
+ },
+ {
+  "path": "Hakaisu/Mellow Skies/01 - Mellow Skies.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 10
+ },
+ {
+  "path": "Eminem/Kamikaze/08 - Not Alike (feat. Royce Da 5'9).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 11
+ },
+ {
+  "path": "Greyboy/Freestylin\u2019/04 - La Jolla.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 12
+ },
+ {
+  "path": "MF DOOM/BORN LIKE THIS/14 - THAT'S THAT.mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 13
+ },
+ {
+  "path": "JID/DiCaprio 2/01 - Frequency Change.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 14
+ },
+ {
+  "path": "Sister Nancy/One Two/06 - Bam Bam.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 15
+ },
+ {
+  "path": "Eminem/Kamikaze/11 - Nice Guy (with Jessie Reyez).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 16
+ },
+ {
+  "path": "Molly Lewis/The Forgotten Edge/02 - Island Spell.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 17
+ },
+ {
+  "path": "Hal Walker/Low Key Gliding/01 - Low Key Gliding.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 18
+ },
+ {
+  "path": "Mort Garson/Mother Earth's Plantasia/01 - Plantasia.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 19
+ },
+ {
+  "path": "Rex Orange County/Bcos U Will Never B Free/10 - Curfew....mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 20
+ },
+ {
+  "path": "Mura Masa/Someday Somewhere/03 - Terrible Love.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 21
+ },
+ {
+  "path": "BROCKHAMPTON/SATURATION II/05 - SWAMP.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 22
+ },
+ {
+  "path": "RAC/3am/01 - 3am.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 23
+ },
+ {
+  "path": "Vince Guaraldi/From All Sides (Remastered 1998)/03 - Ginza Samba - Remastered 1998.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 24
+ },
+ {
+  "path": "Towkio/WWW./02 - Symphony.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 25
+ },
+ {
+  "path": "Wajatta/Don\u2019t Let Get You Down/02 - Don\u2019t Let Get You Down - Edit.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 26
+ },
+ {
+  "path": "Young Thug/Beautiful Thugger Girls/01 - Family Don't Matter (feat. Millie Go Lightly).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 27
+ },
+ {
+  "path": "Kodak Black/Painting Pictures/01 - Day for Day.mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 28
+ },
+ {
+  "path": "XXXTENTACION/Unknown/02 - ALONE, PART 3.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 29
+ },
+ {
+  "path": "Mulatu Astatke/New York - Addis - London  The Story of Ethio Jazz 1965-1975/06 - Y\u00e8gell\u00e9 Tezeta.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 30
+ },
+ {
+  "path": "Kanye West/The Life Of Pablo/02 - Father Stretch My Hands Pt. 1.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 31
+ },
+ {
+  "path": "Sarah Davachi/Play The Ghost/Sarah Davachi - Play The Ghost.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 32
+ },
+ {
+  "path": "Kali Uchis/Isolation/15 - Killer.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 33
+ },
+ {
+  "path": "Eminem/Kamikaze/12 - Good Guy (feat. Jessie Reyez).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 34
+ },
+ {
+  "path": "jarjarjr/Fallen Angel/04 - Lord of Latveria.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 35
+ },
+ {
+  "path": "Mura Masa/Someday Somewhere/01 - Are U There.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 36
+ },
+ {
+  "path": "Lemaitre/Singularity/02 - Wait.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 37
+ },
+ {
+  "path": "Jake Milliner/Bernie Says/03 - Reminisce.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 38
+ },
+ {
+  "path": "Kendrick Lamar/untitled unmastered./04 - untitled 04   08.14.2014..mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 39
+ },
+ {
+  "path": "Wes Montgomery/So Much Guitar!/Wes Montgomery - While We're Young.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 40
+ },
+ {
+  "path": "Kanye West/ye/03 - All Mine.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 41
+ },
+ {
+  "path": "Riton/Fake ID/Riton - Fake ID.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 42
+ },
+ {
+  "path": "DJ Nu-Mark/Blend Crafters, Vol. 1/09 - Flute Fidelity.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 43
+ },
+ {
+  "path": "Rex Orange County/Apricot Princess/01 - Apricot Princess.mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 44
+ },
+ {
+  "path": "RAC/EGO/06 - No One Has To Know.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 45
+ },
+ {
+  "path": "Tyler, The Creator/Potato Salad/Tyler, The Creator - Potato Salad.mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 46
+ },
+ {
+  "path": "Rex Orange County/Apricot Princess/05 - Untitled.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 47
+ },
+ {
+  "path": "Chet Faker/Built On Glass/01 - Release Your Problems.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 48
+ },
+ {
+  "path": "Hermeto Pascoal/M\u00fasica da Lagoa/01 - M\u00fasica da Lagoa.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 49
+ },
+ {
+  "path": "RAC/Back of the Car/01 - Back of the Car.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 50
+ },
+ {
+  "path": "XXXTENTACION/17/07 - Dead Inside (Interlude).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 51
+ },
+ {
+  "path": "Ivy Sole/Eden/Ivy Sole - All Mine.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 52
+ },
+ {
+  "path": "Mura Masa/Mura Masa/07 - What If I Go  (feat. Bonzai).mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 53
+ },
+ {
+  "path": "Lemaitre/Relativity 1/03 - Sceptics.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 54
+ },
+ {
+  "path": "Chassol/Big Sun/05 - Pipornithology, Pt. 2.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 55
+ },
+ {
+  "path": "MC Mablo Dos Pared\u00f5es/Relaxed/01 - Relaxed.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 56
+ },
+ {
+  "path": "Kanye West/Yeezus/06 - I'm In It.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 57
+ },
+ {
+  "path": "Ryan Gosling/La La Land (Original Motion Picture Soundtrack)/06 - City Of Stars.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 58
+ },
+ {
+  "path": "Tito Puente & His Orchestra/Mamborama/09 - Mambo Gallego.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 59
+ },
+ {
+  "path": "Chet Baker/Chet Baker Sings/13 - I Fall In Love Too Easily.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 60
+ },
+ {
+  "path": "Lemaitre/Afterglow/03 - Haze.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 61
+ },
+ {
+  "path": "XXXTENTACION/Unknown/15 - changes.mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 62
+ },
+ {
+  "path": "Edvard Grieg/Tchaikovsky & Grieg Piano Concertos/Edvard Grieg - Piano Concerto in A Minor, Op. 16  I. Allegro molto moderato.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 63
+ },
+ {
+  "path": "Mura Masa/Mura Masa/12 - Who Is It Gonna B (feat. A. K. Paul).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 64
+ },
+ {
+  "path": "Mura Masa/Mura Masa/10 - helpline (feat. Tom Tripp).mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 65
+ },
+ {
+  "path": "Amnesty/Free Your Mind/Amnesty - Liberty.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 66
+ },
+ {
+  "path": "Tyler, The Creator/Goblin/12 - B.S.D..mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 67
+ },
+ {
+  "path": "Smino/blkswn/03 - Glass Flows.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 68
+ },
+ {
+  "path": "Drugdealer/The End Of Comedy/08 - The End Of Comedy.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 69
+ },
+ {
+  "path": "Cyril Diaz Et Son Orchestre/Disques Debs International Vol. 1/03 - Feeling Happy.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 70
+ },
+ {
+  "path": "Kendrick Lamar/To Pimp A Butterfly/13 - The Blacker The Berry.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 71
+ },
+ {
+  "path": "Denyah/Easy Baby/01 - Easy Baby.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 72
+ },
+ {
+  "path": "Emma Stone/La La Land (Original Motion Picture Soundtrack)/12 - Audition (The Fools Who Dream).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 73
+ },
+ {
+  "path": "Luiz Bonf\u00e1/Introspection/08 - Adventures In Space.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 74
+ },
+ {
+  "path": "Ant\u00f4nio Carlos Jobim/Stone Flower (CTI Records 40th Anniversary Edition)/04 - Brazil (Aka Aquarela do Brasil).mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 75
+ },
+ {
+  "path": "Soundboarders/House File/06 - Hear Me.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 76
+ },
+ {
+  "path": "Jay Robinson/Will I Ever b w You Are Mine/02 - You Are Mine.mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 77
+ },
+ {
+  "path": "Wajatta/Don\u2019t Let Get You Down/03 - Don\u2019t Let Get You Down.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 78
+ },
+ {
+  "path": "N'Gou Bagayoko/Kulu/08 - Yala.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 79
+ },
+ {
+  "path": "Ruck P/Destination/01 - Destination.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 80
+ },
+ {
+  "path": "Duckwrth/I'M UUGLY/03 - I'M DEAD (feat. Sabrina Claudio).mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 81
+ },
+ {
+  "path": "XXXTENTACION/17/02 - Jocelyn Flores.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 82
+ },
+ {
+  "path": "Mura Masa/Mura Masa/09 - NOTHING ELSE! (feat. Jamie Lidell).mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 83
+ },
+ {
+  "path": "Towkio/WWW./12 - Hate To Love.mp3",
+  "event": "hand claps",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 84
+ },
+ {
+  "path": "Kendrick Lamar/To Pimp A Butterfly/10 - Hood Politics.mp3",
+  "event": "whistling",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 85
+ },
+ {
+  "path": "Deaton Chris Anthony/BO Y/01 - Sircles.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 86
+ },
+ {
+  "path": "Tyler, The Creator/Flower Boy/03 - Sometimes....mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 87
+ },
+ {
+  "path": "Smino/blkswn/09 - Edgar Allan Poe'd Up.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 88
+ },
+ {
+  "path": "Dire Straits/Dire Straits/04 - Six Blade Knife.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 89
+ },
+ {
+  "path": "RAC/EGO/03 - Nobody.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 90
+ },
+ {
+  "path": "EARTHGANG/Strays with Rabies/01 - ... And on the 8th Day.mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 91
+ },
+ {
+  "path": "Pigeondust/Way Back When/21 - Nothing But Jazz Loops.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 92
+ },
+ {
+  "path": "Lemaitre/Rocket Girl (RAC Mix)/01 - Rocket Girl - RAC Mix.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.2,
+  "id": 93
+ },
+ {
+  "path": "Towkio/WWW./06 - Loose.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.8,
+  "id": 94
+ },
+ {
+  "path": "L'Eclair/Sauropoda/01 - Still Steeve.mp3",
+  "event": "hand claps",
+  "sources": [
+   "captions"
+  ],
+  "window": 0.5,
+  "id": 95
+ },
+ {
+  "path": "Earth, Wind & Fire/All 'N All/06 - Beijo (Interlude).mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 96
+ },
+ {
+  "path": "Green House/Six Songs for Invisible Gardens/Green House - Soft Meadow.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 97
+ },
+ {
+  "path": "Rejjie Snow/Dear Annie/Rejjie Snow - 23.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 98
+ },
+ {
+  "path": "Emma dos Santos/Serenidad/Emma dos Santos - Serenidad.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 99
+ },
+ {
+  "path": "Jaeden Camstra/Kids' Menu/Jaeden Camstra - Gameboy in Traffic.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 100
+ },
+ {
+  "path": "Pepe California/LLAMA/01 - MELI-FALI.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 101
+ },
+ {
+  "path": "Intalekt/The Adventures Of Masta Splinta/09 - Peace.mp3",
+  "event": "whistling",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 102
+ },
+ {
+  "path": "The Go! Team/Apollo Throwdown (Remixes)/02 - Apollo Throwdown (Star Slinger Remix).mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 103
+ },
+ {
+  "path": "The Penguins/The Original Hit Recording - Earth Angel/The Penguins - Earth Angel.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 104
+ },
+ {
+  "path": "Tamba 4/Samba Blim/01 - Samba Blim.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "random"
+  ],
+  "window": 0.5,
+  "id": 105
+ },
+ {
+  "path": "Lemaitre/We Got U/01 - We Got U.mp3",
+  "event": "whistling",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 106
+ },
+ {
+  "path": "Gustav Scheringer Duo/Laura/Gustav Scheringer Duo - Blue Bossa.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 107
+ },
+ {
+  "path": "Petit Biscuit/Presence/Petit Biscuit - Sunset Lover.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 108
+ },
+ {
+  "path": "Unknown/Singles/Unknown - Chet Faker x SAINT WKND - Lover.mp3",
+  "event": "hand claps",
+  "sources": [
+   "referee"
+  ],
+  "window": 0.5,
+  "id": 109
+ },
+ {
+  "path": "Lemaitre/Relativity By Nite/03 - Splitting Colors - Club Mix.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 110
+ },
+ {
+  "path": "Louis The Child/Love Is Alive EP/02 - Fire.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 111
+ },
+ {
+  "path": "Hugh Masekela/Best Of 20th Century/07 - Riot.mp3",
+  "event": "hand claps",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 112
+ },
+ {
+  "path": "Estelle/Shine/03 - American Boy.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 113
+ },
+ {
+  "path": "John Legend/La La Land (Original Motion Picture Soundtrack)/10 - Start A Fire.mp3",
+  "event": "female lead vocals",
+  "sources": [
+   "clap"
+  ],
+  "window": 0.5,
+  "id": 114
+ }
+]

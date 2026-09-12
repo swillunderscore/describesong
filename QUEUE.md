@@ -527,3 +527,18 @@ ONE thing worth keeping from it: CLAP is nearly blind to "rapping" as a
 query word — worth a vocabulary note in "what the index hears" and maybe a
 rap-specific phrasing hint ("male rap vocals over a hip hop beat" scored far
 better than "rapping" in earlier tests).
+
+### Measured 2026-09-12 — HIS labels (115 clips, the referee that matters)
+Precision of each system's claims, judged by him (song-level; unsure excluded):
+  hand claps        CLAP 0/14 = 0%    captions 7/11 = 64%   AudioSet-AST 7/8 = 88%   random 50%
+  whistling         CLAP 1/13 = 8%    captions claimed NONE  AudioSet-AST 8/8 = 100%  random 0%
+  female lead vocal CLAP 12/12 = 100% captions 8/13 = 62%   AudioSet-AST 5/6 = 83%   random 33%
+Reading: CLAP is excellent on vocal gender and BLIND to concrete sound
+events; the caption model is mediocre everywhere and never even mentions
+whistling; the AudioSet classifier is the one that hears events. DECISION:
+no captions. Add an EVENT TAGGER at scan time — the same AudioSet model, which
+already exists for the browser (Xenova/ast-finetuned-audioset-10-10-0.4593,
+transformers.js) — storing (class, probability) per track for a curated set
+of searchable events (claps, whistling, saxophone, harmonica, beatboxing,
+church bells, crowd, applause, laughter, …). Query words map to classes and
+act as facts (filter / tier), like year and country. ~50 B per track.

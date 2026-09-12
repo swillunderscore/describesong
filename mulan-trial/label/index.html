@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>label clips</title>
+<style>body{font:16px system-ui;background:#15151a;color:#eee;max-width:720px;margin:40px auto;padding:0 16px} .q{font-size:26px;font-weight:800;margin:10px 0} button{font:inherit;padding:14px 22px;border:0;border-radius:12px;margin:6px;cursor:pointer;font-weight:700} .y{background:#4caf50;color:#000}.n{background:#ef5350;color:#000}.u{background:#555;color:#fff} .k{color:#999;font-size:13px} audio{width:100%;margin:12px 0} .done{color:#8f8}</style>
+<div class="k" id="prog"></div>
+<div class="q" id="q"></div>
+<audio id="a" controls></audio>
+<div><button class="y" onclick="ans('yes')">Yes</button><button class="n" onclick="ans('no')">No</button><button class="u" onclick="ans('unsure')">Unsure</button> <button class="u" onclick="replay()">Replay 10 s</button></div>
+<div class="k">Space = replay · Y / N / U = answer. The song, not just these 10 s — the clip starts where a system claims it is; scrub if it doesn\'t settle it.</div>
+<script>
+let items=[], i=0, labels={};
+const $=s=>document.querySelector(s);
+async function load(){ items=await (await fetch('/set.json')).json(); labels=await (await fetch('/labels.json')).json().catch(()=>({})); i=items.findIndex(it=>!(it.id in labels)); if(i<0) i=items.length; show(); }
+function show(){ if(i>=items.length){ $('#q').innerHTML='<span class="done">All done — thank you. Tell Claude.</span>'; $('#prog').textContent=items.length+' labelled'; return; }
+  const it=items[i]; $('#prog').textContent=(Object.keys(labels).length)+' / '+items.length; $('#q').textContent='Does this SONG have '+it.event+'?';
+  const a=$('#a'); a.src='/library/'+it.path.split('/').map(encodeURIComponent).join('/'); a.onloadedmetadata=()=>{ a.currentTime=Math.max(0, it.window*a.duration-5); a.play(); const stopAt=a.currentTime+10; const h=()=>{ if(a.currentTime>=stopAt){a.pause(); a.removeEventListener('timeupdate',h);} }; a.addEventListener('timeupdate',h); }; a.load(); }
+function replay(){ const a=$('#a'), it=items[i]; a.currentTime=Math.max(0, it.window*a.duration-5); a.play(); }
+async function ans(v){ const it=items[i]; labels[it.id]=v; await fetch('/save',{method:'POST',body:JSON.stringify({id:it.id,label:v})}); i++; show(); }
+document.addEventListener('keydown',e=>{ if(e.key===' '){e.preventDefault();replay();} if(e.key==='y')ans('yes'); if(e.key==='n')ans('no'); if(e.key==='u')ans('unsure'); });
+load();
+</script>
