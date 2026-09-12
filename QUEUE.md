@@ -696,7 +696,12 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   fingerprint, embed, submit — 3 s). mp3/flac/wav/m4a/ogg/opus accepted.
 
 ### MEASURED 2026-09-12 — his friend's track, CLAP vs MuLan (cached trial vectors, same 2,286 tracks)
-Where "Fishy fishy" lands for the words he actually typed:
+Where "Fishy fishy" lands. NOTE: these queries are MY RECONSTRUCTION of his
+search, not his search — I cannot see what he types. Built from the words
+/api/describe/1332 returns (what the "what the index hears" box shows for the
+track) because he said he typed the top terms from it. Only "all these fishes"
+came from him, quoted in his own message. Both models got identical queries,
+so the gap is real whoever phrased them.
 
 | query                                                | CLAP | MuLan |
 |------------------------------------------------------|------|-------|
@@ -709,7 +714,8 @@ Where "Fishy fishy" lands for the words he actually typed:
 | grunge                                               |  561 |  1619 |
 | **median over 10 queries**                           |**429**| **27** |
 
-* the exact words the site's own "what the index hears" box showed him.
+* these six words are exactly what /api/describe returns for the track, i.e.
+  what the box would have shown him — not necessarily the order he typed.
 - Neither model knows "grunge" as a texture; MuLan is worse on that one word
   and better on every phrase. CLAP is not broken, it is trained on general
   audio-caption pairs (AudioSet-scale) where "grunge" is 90s rock; MuLan is
