@@ -828,3 +828,27 @@ His call, and the constraints are his:
   on stock drivers. That is the whole reason ONNX was the right export target.
 - The browser path stays exactly as it is. The program is for people with big
   libraries who want MuLan quality; the browser is for everyone else.
+
+### MEASURED 2026-09-12 — what MuLan would cost the Pi
+The text tower exports too (its own forward only accepts raw strings, so the
+wrapper calls the RoBERTa + proj + transformer path directly; verified cosine
+1.000000 against mulan(texts=...)).
+
+| text tower | on disk | cosine vs fp32 | ms/query (4 x86 threads) |
+|------------|---------|----------------|--------------------------|
+| fp32       | 1315 MB | —              | 12 |
+| fp16       |  658 MB | conversion emits a bad Cast; needs a fix | — |
+| int8       |  330 MB | 0.978          |  5 |
+
+- **RAM ON THE PI: ~150 MB.** Clean process, baseline 44 MB -> peak 195 MB with
+  the int8 text tower loaded and run. ONNX Runtime memory-maps the weights, so
+  resident memory is well under the file size. The server uses 70 MB today, the
+  container cap is 1500 MB. Not close to a problem.
+- int8 holds up far better on the TEXT tower (0.978) than on the audio one
+  (0.887) — a RoBERTa-style stack quantises well, the audio conformer does not.
+- Searches stay fast: 5 ms/query here, so maybe 20-30 ms on the Pi's cores.
+
+### DECIDED 2026-09-12 — no separate program after all
+At 1.54 s/track the browser is good enough and a portable GUI is not worth
+building. His call, and the 3.5x correction is what changed it. The local
+scanner stays in the queue as an OPTION, not a plan.
