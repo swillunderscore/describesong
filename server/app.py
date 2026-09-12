@@ -309,6 +309,9 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         c = _facts.parse(fields["country"]); stated["country"] = c["country"] or _facts.COUNTRIES.get(fields["country"].lower()) or stated["country"]
     qv = text_embed(sound_q if len(sound_q) >= 2 else q)
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
+    # a stated fact filters AFTER retrieval, so retrieve deep enough that a narrow
+    # filter still leaves pages of results ("nineties rap" out of 8 candidates left 3)
+    if stated["year_from"] or stated["country"] or stated["instrumental"]: want = max(want, 400)
     if exact:
         # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
         # searching. 503 means "not now" and the page keeps the fast answer.
