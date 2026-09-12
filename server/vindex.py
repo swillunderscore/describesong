@@ -29,7 +29,10 @@ class VectorIndex:
     CANDIDATES = 1000           # IVF candidates re-ranked exactly (reading 1000 fp16 rows is nothing)
     SAMPLE_MEDIAN = 5000        # vectors kept in RAM to estimate the library median in IVF mode
 
-    def __init__(self, data_dir, on_event=None):
+    def __init__(self, data_dir, on_event=None, prefix=""):
+        # PREFIX keeps each ear's files apart. Without it a model switch would
+        # memory-map the other model's vectors and answer with nonsense.
+        self.prefix = prefix
         self.dir = data_dir; self.on_event = on_event or (lambda e: None)
         self.lock = threading.RLock()
         self.ids = np.zeros(0, np.int64); self.pos = {}          # track id -> row
@@ -40,7 +43,7 @@ class VectorIndex:
         self.busy = 0                                              # searches in flight (the slow pass yields to them)
 
     # ---- storage ------------------------------------------------------------
-    def _f16_path(self): return os.path.join(self.dir, "vectors.f16")
+    def _f16_path(self): return os.path.join(self.dir, self.prefix + "vectors.f16")
     def _open(self, cap):
         self.cap = cap; self.M16 = np.memmap(self._f16_path(), np.float16, "r+" if os.path.exists(self._f16_path()) else "w+", shape=(cap, DIM))
     def _grow(self, need):
@@ -67,7 +70,7 @@ class VectorIndex:
                 ids[i] = tid; self.M16[i] = np.frombuffer(blob, np.float16); i += 1
             n = i; ids = ids[:n]
             self.M16.flush(); self.ids = ids; self.pos = {int(t): j for j, t in enumerate(ids)}; self.n = n
-            np.save(os.path.join(self.dir, "ids.npy"), ids)
+            np.save(os.path.join(self.dir, self.prefix + "ids.npy"), ids)
             self._choose_mode(startup=True)
 
     def _choose_mode(self, startup=False):
@@ -78,7 +81,7 @@ class VectorIndex:
         self.M32 = None
         try:
             import faiss
-            meta_p = os.path.join(self.dir, "index.json"); ix_p = os.path.join(self.dir, "index.faiss")
+            meta_p = os.path.join(self.dir, self.prefix + "index.json"); ix_p = os.path.join(self.dir, self.prefix + "index.faiss")
             if startup and os.path.exists(ix_p) and os.path.exists(meta_p):
                 meta = json.load(open(meta_p)); ix = faiss.read_index(ix_p)
                 if meta.get("dim") == DIM and ix.ntotal <= self.n:
@@ -142,13 +145,13 @@ class VectorIndex:
                 e = min(n, s + step); ix.add_with_ids(np.asarray(self.M16[s:e], np.float32), np.arange(s, e, dtype=np.int64))
                 rate = e / max(1e-6, time.time() - t1); self._event("running", e, n, (n - e) / max(rate, 1), "adding")
             ix.nprobe = max(32, nlist // 8)
-            faiss.write_index(ix, os.path.join(self.dir, "index.faiss.tmp"))
+            faiss.write_index(ix, os.path.join(self.dir, self.prefix + "index.faiss.tmp"))
             with self.lock:
                 # rows that arrived during the build
                 if ix.ntotal < self.n: ix.add_with_ids(np.asarray(self.M16[ix.ntotal:self.n], np.float32), np.arange(ix.ntotal, self.n, dtype=np.int64))
                 self.ix = ix; self.mode = "ivf"; self.M32 = None; self.built_n = self.n; self.added_since_build = 0; self._sample()
-                os.replace(os.path.join(self.dir, "index.faiss.tmp"), os.path.join(self.dir, "index.faiss"))
-                json.dump({"dim": DIM, "built_n": self.built_n, "nlist": nlist, "at": time.time()}, open(os.path.join(self.dir, "index.json"), "w"))
+                os.replace(os.path.join(self.dir, self.prefix + "index.faiss.tmp"), os.path.join(self.dir, self.prefix + "index.faiss"))
+                json.dump({"dim": DIM, "built_n": self.built_n, "nlist": nlist, "at": time.time()}, open(os.path.join(self.dir, self.prefix + "index.json"), "w"))
             self._event("done", n, n, 0, "rebuilt in %.0f s" % (time.time() - t0))
         except Exception as e:
             print("vindex: build failed:", e); self._event("failed", 0, self.n, None, str(e)[:120])

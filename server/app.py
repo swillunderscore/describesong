@@ -13,9 +13,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 DATA = os.environ.get("VIBEFIND_DATA", "./data"); os.makedirs(DATA, exist_ok=True)
+MODELS_DIR = os.environ.get("VIBEFIND_MODELS", os.path.join(DATA, "models")); os.makedirs(MODELS_DIR, exist_ok=True)
 DB = os.path.join(DATA, "describesong.sqlite")
 # ONE model, forever. A vector from anything else is rejected at the door.
-MODEL_ID = "Xenova/larger_clap_music_and_speech@fp16"
+# THE EAR. Every vector in the index comes from exactly one of these; vectors
+# from two models cannot be compared, averaged or ranked together, so the
+# database holds the model each vector came from and the index only ever loads
+# one of them. Switch with VIBEFIND_MODEL; nothing is deleted by switching.
+MODELS = {
+    "clap": {"id": "Xenova/larger_clap_music_and_speech@fp16", "windows": 8, "rate": 48000},
+    "mulan": {"id": "OpenMuQ/MuQ-MuLan-large@fp16", "windows": 3, "rate": 24000},
+}
+ACTIVE = os.environ.get("VIBEFIND_MODEL", "clap")
+if ACTIVE not in MODELS: raise SystemExit("VIBEFIND_MODEL must be one of %s" % list(MODELS))
+MODEL_ID = MODELS[ACTIVE]["id"]
 EVENTS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "events.json")))
 EVENT_CLASSES = set(EVENTS["classes"]); EVENT_WORDS = EVENTS["words"]      # word people type -> AudioSet class
 DIM = 512
@@ -73,7 +84,8 @@ CREATE TABLE IF NOT EXISTS labels(     -- every label ever offered for an unveri
 );
 CREATE TABLE IF NOT EXISTS vectors(    -- mean vector + up to 4 moments, all unit norm, float16 on disk
   track_id INTEGER NOT NULL, kind TEXT NOT NULL, pos INTEGER NOT NULL, vec BLOB NOT NULL,
-  PRIMARY KEY(track_id, kind, pos)
+  model TEXT NOT NULL DEFAULT 'clap',
+  PRIMARY KEY(track_id, kind, pos, model)
 );
 CREATE TABLE IF NOT EXISTS ratelimit(ip TEXT PRIMARY KEY, window REAL, n INTEGER);
 
@@ -100,6 +112,15 @@ def norm_label(*parts):
 with db() as _c:
     if "lyrics_state" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
         _c.execute("ALTER TABLE tracks ADD COLUMN lyrics_state TEXT DEFAULT 'none'")
+    if "model" not in [r[1] for r in _c.execute("PRAGMA table_info(vectors)")]:
+        # rebuild: the primary key gains `model`, and every existing row is CLAP
+        _c.executescript("""
+        CREATE TABLE vectors_new(track_id INTEGER NOT NULL, kind TEXT NOT NULL, pos INTEGER NOT NULL,
+          vec BLOB NOT NULL, model TEXT NOT NULL DEFAULT 'clap', PRIMARY KEY(track_id, kind, pos, model));
+        INSERT INTO vectors_new(track_id, kind, pos, vec, model) SELECT track_id, kind, pos, vec, 'clap' FROM vectors;
+        DROP TABLE vectors; ALTER TABLE vectors_new RENAME TO vectors;
+        """)
+        print("migrated: vectors now carry the model they came from", flush=True)
     if "acoustid" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
         # AcoustID's own id for the recording: a fuzzy match, so two rips of the
         # same unidentified song share it while their exact fingerprints differ
@@ -120,24 +141,38 @@ with db() as _c:
 from vindex import VectorIndex
 _subs: set = set(); _loop = None
 def _rebuild_event(ev): publish({"rebuild": ev})
-INDEX = VectorIndex(DATA, on_event=_rebuild_event)
+# CLAP keeps the unprefixed files it already wrote; a new ear gets its own.
+INDEX = VectorIndex(DATA, on_event=_rebuild_event, prefix="" if ACTIVE == "clap" else ACTIVE + "-")
 with db() as _c:
-    INDEX.load_from_rows(((r["track_id"], r["vec"]) for r in _c.execute("SELECT track_id, vec FROM vectors WHERE kind='mean' ORDER BY track_id")),
-                         _c.execute("SELECT COUNT(*) FROM vectors WHERE kind='mean'").fetchone()[0])
+    INDEX.load_from_rows(((r["track_id"], r["vec"]) for r in _c.execute("SELECT track_id, vec FROM vectors WHERE kind='mean' AND model=? ORDER BY track_id", (ACTIVE,))),
+                         _c.execute("SELECT COUNT(*) FROM vectors WHERE kind='mean' AND model=?", (ACTIVE,)).fetchone()[0])
 print("vindex:", INDEX.status())
 
 # ---- text tower (the only model on the server) -----------------------------
 _text = {}
 def text_embed(q: str) -> np.ndarray:
+    """A query, in the SAME space as the track vectors. Whichever ear is active,
+    this is its text half — it runs here, once per search, never in a browser."""
     if not _text:
         import onnxruntime as ort
-        from huggingface_hub import hf_hub_download
         from transformers import AutoTokenizer
-        repo = "Xenova/larger_clap_music_and_speech"
-        _text["tok"] = AutoTokenizer.from_pretrained(repo)
-        _text["sess"] = ort.InferenceSession(hf_hub_download(repo, "onnx/text_model_fp16.onnx"), providers=["CPUExecutionProvider"])
-    ids = _text["tok"]([q], return_tensors="np", padding=True)["input_ids"]
-    out = _text["sess"].run(None, {"input_ids": ids})
+        so = ort.SessionOptions(); so.log_severity_level = 3; so.intra_op_num_threads = 4
+        if ACTIVE == "mulan":
+            path = os.path.join(MODELS_DIR, "mulan_text_int8.onnx")
+            if not os.path.exists(path): raise HTTPException(503, "the MuLan text model is not on this server yet")
+            _text["tok"] = AutoTokenizer.from_pretrained("xlm-roberta-base")
+            _text["sess"] = ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
+            _text["mask"] = True
+        else:
+            from huggingface_hub import hf_hub_download
+            repo = "Xenova/larger_clap_music_and_speech"
+            _text["tok"] = AutoTokenizer.from_pretrained(repo)
+            _text["sess"] = ort.InferenceSession(hf_hub_download(repo, "onnx/text_model_fp16.onnx"), so, providers=["CPUExecutionProvider"])
+            _text["mask"] = False
+    b = _text["tok"]([q], return_tensors="np", padding=True)
+    feed = {"input_ids": b["input_ids"].astype(np.int64)}
+    if _text["mask"]: feed["attention_mask"] = b["attention_mask"].astype(np.int64)
+    out = _text["sess"].run(None, feed)
     v = next(o for o in out if o.ndim == 2 and o.shape[-1] == DIM)[0].astype(np.float32)
     return v / (np.linalg.norm(v) + 1e-9)
 
@@ -304,12 +339,12 @@ def submit(body: SubmitIn, request: Request):
             c.execute("DELETE FROM track_events WHERE track_id=?", (tid,))
             c.executemany("INSERT INTO track_events(track_id, cls, prob) VALUES(?,?,?)", [(tid, k, v) for k, v in events.items()] or [(tid, "-", 0.0)])
         if vote_only: return {"ok": True, "track_id": tid, "vote": True, "events": len(events)}
-        old = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
+        old = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean' AND model=?", (tid, ACTIVE)).fetchone()
         if old:
             prev = np.frombuffer(old["vec"], np.float16).astype(np.float32); mean = prev + mean; mean /= np.linalg.norm(mean) + 1e-9
-        c.execute("INSERT OR REPLACE INTO vectors VALUES(?,?,?,?)", (tid, "mean", 0, mean.astype(np.float16).tobytes()))
+        c.execute("INSERT OR REPLACE INTO vectors(track_id,kind,pos,vec,model) VALUES(?,?,?,?,?)", (tid, "mean", 0, mean.astype(np.float16).tobytes(), ACTIVE))
         for i, m in enumerate(moments):
-            c.execute("INSERT OR REPLACE INTO vectors VALUES(?,?,?,?)", (tid, "moment", i, m.astype(np.float16).tobytes()))
+            c.execute("INSERT OR REPLACE INTO vectors(track_id,kind,pos,vec,model) VALUES(?,?,?,?,?)", (tid, "moment", i, m.astype(np.float16).tobytes(), ACTIVE))
     INDEX.add(tid, mean)
     with db() as c:
         r = c.execute("SELECT artist, title, album FROM tracks WHERE id=?", (tid,)).fetchone()
@@ -531,7 +566,7 @@ def vocab_matrix():
 def describe(tid: int, request: Request):
     ratelimit(client_ip(request), 3000)
     with db() as c:
-        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
+        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean' AND model=?", (tid, ACTIVE)).fetchone()
     if not row: raise HTTPException(404, "no such track")
     v = np.frombuffer(row["vec"], np.float16).astype(np.float32)
     M = vocab_matrix(); s = M @ v; med = float(np.median(s)); top = float(s.max())
@@ -679,7 +714,7 @@ def similar(tid: int, request: Request, k: int = 30):
     demonstration of what the index can and cannot tell apart."""
     ratelimit(client_ip(request), 3000)
     with db() as c:
-        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
+        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean' AND model=?", (tid, ACTIVE)).fetchone()
     if not row: raise HTTPException(404, "no such track")
     v = np.frombuffer(row["vec"], np.float16).astype(np.float32)
     INDEX.busy += 1
@@ -702,7 +737,7 @@ def stats_dict():
         t = c.execute("SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks", (time.time() - 7 * 86400,)).fetchone()
     st = INDEX.status()
     with db() as c: ly = c.execute("SELECT SUM(lyrics_state='found') f, SUM(lyrics_state='none') p FROM tracks").fetchone()
-    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "acoustid": bool(ACOUSTID_KEY), "lyrics": ly["f"] or 0, "lyrics_pending": ly["p"] or 0,
+    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "ear": ACTIVE, "windows": MODELS[ACTIVE]["windows"], "rate": MODELS[ACTIVE]["rate"], "acoustid": bool(ACOUSTID_KEY), "lyrics": ly["f"] or 0, "lyrics_pending": ly["p"] or 0,
             "mode": st["mode"], "rebuild": st["build"] if st["building"] else None}
 
 @app.get("/api/stats")

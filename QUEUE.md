@@ -880,3 +880,26 @@ two halves that cannot see each other. Earlier in this session I proposed
 exactly that for mobile; it was incoherent and he caught it. If MuLan goes in,
 MuLan is what everything uses, phones included. His call: "my decision is
 quality". Searching is unaffected on any device — the text half runs on the Pi.
+
+### BUILT 2026-09-12 — the server can run either ear
+- `VIBEFIND_MODEL=clap|mulan`. MODELS holds each ear's id, window count and
+  sample rate; /api/stats reports them so the browser scans the right way.
+- vectors gains a `model` column (migration rebuilds the table, existing rows
+  become 'clap'); the index only ever loads one model's vectors, and its files
+  are prefixed per ear, so switching is reversible and destroys nothing.
+- text_embed picks the matching text half: CLAP's from HuggingFace, MuLan's
+  int8 tower from the Pi's own models dir.
+- server/seed_vectors.py fills an ear from an offline .npz, matching a file
+  path to a track by artist+title with feat./remix tails stripped: **2,035 of
+  2,286 of his trial vectors matched**; the rest arrive when he rescans.
+
+MEASURED on a seeded copy of the live database, MuLan serving live searches:
+
+| query | CLAP | MuLan |
+|---|---|---|
+| dusty sample-based beat with a spoken word sample |  643 | **1** |
+| kids voice sample lofi hip hop                    |  807 | **8** |
+| grungy lo-fi trip hop beat                        |  297 | **16** |
+
+Controls still behave: "aggressive dubstep with huge wobbling bass" -> SAN
+DIEGO VIP, "solo nylon string guitar brazilian" -> Consolação.
