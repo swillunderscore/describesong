@@ -759,7 +759,12 @@ def similar(tid: int, request: Request, k: int = 30):
 
 def stats_dict():
     with db() as c:
-        t = c.execute("SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks", (time.time() - 7 * 86400,)).fetchone()
+        # COUNT WHAT CAN ACTUALLY BE FOUND. A track whose sound has not been read
+        # by the active model is not in the index in any sense a visitor means,
+        # and saying otherwise is the site lying about itself.
+        t = c.execute("""SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks
+                         WHERE id IN (SELECT track_id FROM vectors WHERE kind='mean' AND model=?)""",
+                      (time.time() - 7 * 86400, ACTIVE)).fetchone()
     st = INDEX.status()
     with db() as c: ly = c.execute("SELECT SUM(lyrics_state='found') f, SUM(lyrics_state='none') p FROM tracks").fetchone()
     return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "ear": ACTIVE, "windows": MODELS[ACTIVE]["windows"], "rate": MODELS[ACTIVE]["rate"], "acoustid": bool(ACOUSTID_KEY), "lyrics": ly["f"] or 0, "lyrics_pending": ly["p"] or 0,

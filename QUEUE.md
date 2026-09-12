@@ -1078,3 +1078,23 @@ scanning his actual file. Disagreement means a wrong match.
   공중도둑 "Ahhhh, These Chains!", Gucci Mane "Walk With a Waddle", Metro
   Station "Disco", Skrillex "Kill EVERYBODY". None has a trustworthy file
   here; they need a scan of the real folder.
+
+### FIXED 2026-09-12 — the header was lying about the database
+It said "2 276 tracks in the index" while only 2,271 could be found by sound.
+stats_dict now counts only tracks with a vector in the ACTIVE model, for
+`tracks`, `week` and `verified` alike. A track whose sound has not been read
+by the model in use is not in the index in any sense a visitor means.
+Header now reads 2,272.
+
+### 2026-09-12 — Skrillex "Kill EVERYBODY" added from his library
+He added it and confirmed it by ear. Only one copy exists on the machine
+(Scary Monsters and Nice Sprites, 300 s) and the database row says 309 s —
+9 s apart, well outside the ±2 s I use elsewhere. Used it anyway because it
+is the only copy, the album matches, and he confirmed the track; a different
+rip length does not change what the song sounds like. FLAGGED so it is not a
+silent assumption: if this ever looks wrong in search, this is the reason.
+
+### REMAINING: 4 tracks with no sound vector
+Angel Russell "No It Isn't So", 공중도둑 "Ahhhh, These Chains!", Gucci Mane
+"Walk With a Waddle", Metro Station "Disco". No file for any of them on this
+machine or the Pi library.
