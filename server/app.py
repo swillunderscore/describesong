@@ -353,22 +353,27 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
             else:
                 for t, _ in qh: via[t] = ("lyrics", 1.0)
     if stated["year_from"] or stated["country"] or stated["instrumental"]:
+        # STATED FACTS: a track that contradicts one is dropped; a track whose facts
+        # are KNOWN and match ranks above one we know nothing about (otherwise the
+        # unidentified tracks, which can never contradict, float to the top).
         with db() as c:
-            keep = set()
             want_script = _facts.SCRIPT_COUNTRIES.get(stated["country"] or "")
+            tier = {}
             for r in c.execute("SELECT t.id, f.year, f.country, f.script, f.lang, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
-                ok = True
-                if stated["year_from"] and r["year"] and not (stated["year_from"] <= r["year"] <= stated["year_to"]): ok = False
+                ok = True; known = 0; asked = 0
+                if stated["year_from"]:
+                    asked += 1
+                    if r["year"]: known += 1; ok = ok and (stated["year_from"] <= r["year"] <= stated["year_to"])
                 if stated["country"]:
-                    # A known country decides. Unknown: only STRONG evidence excludes — a non-Latin
-                    # script that isn't the one that country writes in. Letter hints (ø, ö, ñ) never
-                    # exclude: Röyksopp's ö would have "proved" they aren't Norwegian.
-                    if r["country"]: ok = ok and r["country"] == stated["country"]
-                    elif r["script"] and r["script"] != "latin" and want_script: ok = ok and r["script"] == want_script
-                    elif r["script"] and r["script"] != "latin" and not want_script: ok = False   # cyrillic name, "norwegian" asked
-                if stated["instrumental"] and r["lyrics_state"] == "found": ok = False
-                if ok: keep.add(r["id"])
-        kept = [(t, sc) for t, sc in zip(ids, scores) if t in keep]
+                    asked += 1
+                    if r["country"]: known += 1; ok = ok and r["country"] == stated["country"]
+                    elif r["script"] and r["script"] != "latin" and want_script: known += 1; ok = ok and r["script"] == want_script
+                    elif r["script"] and r["script"] != "latin" and not want_script: ok = False
+                if stated["instrumental"]:
+                    asked += 1
+                    if r["lyrics_state"] in ("found", "instrumental"): known += 1; ok = ok and r["lyrics_state"] == "instrumental"
+                if ok: tier[r["id"]] = 2 if known == asked else 1
+        kept = sorted(((t, sc) for t, sc in zip(ids, scores) if t in tier), key=lambda x: (-tier[x[0]], -x[1]))
         if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
     if offset == 0 and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):
         for t, frac in lyric_hits(q):
