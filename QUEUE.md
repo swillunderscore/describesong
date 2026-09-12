@@ -852,3 +852,31 @@ wrapper calls the RoBERTa + proj + transformer path directly; verified cosine
 At 1.54 s/track the browser is good enough and a portable GUI is not worth
 building. His call, and the 3.5x correction is what changed it. The local
 scanner stays in the queue as an OPTION, not a plan.
+
+### PROVEN 2026-09-12 — MuLan RUNS IN THE BROWSER. Measured in Chrome, this machine.
+scratchpad/webtest/ (index.html, stft.js). Loads the fp16 audio tower through
+onnxruntime-web 1.20.1, feeds it a spectrogram computed in JavaScript, and
+compares the 512 numbers that come out against the PyTorch answer.
+
+| backend | model load | per 10 s window | cosine vs PyTorch |
+|---------|-----------|-----------------|-------------------|
+| WebGPU  | 1299 ms   |   532 ms        | 0.999873 |
+| WASM    |  934 ms   | 12085 ms        | 0.999999 |
+
+- JS spectrogram (radix-2 FFT, 1001 frames): **92 ms**, negligible.
+- **1.6 s/track on WebGPU** (3 windows), against ~1 s/track for CLAP today.
+- WASM is 36 s/track: that is the no-GPU fallback and it is not usable for a
+  library scan. A machine without WebGPU would need CLAP or a lot of patience.
+- GOTCHA that cost two rounds: ORT Web does NOT fetch a model's external
+  weights file on its own. It must be handed over explicitly via the
+  `externalData` session option, named exactly as the .onnx references it.
+  Without it you get a bare numeric error code and no message.
+- WebGPU's 0.999873 is fp16 GPU drift, far tighter than CLAP's measured 0.988.
+
+### DECIDED 2026-09-12 — one model, not two (his correction, and he is right)
+Vectors from two models cannot be compared, averaged or ranked together, so a
+phone submitting CLAP while a desktop submits MuLan would split the index into
+two halves that cannot see each other. Earlier in this session I proposed
+exactly that for mobile; it was incoherent and he caught it. If MuLan goes in,
+MuLan is what everything uses, phones included. His call: "my decision is
+quality". Searching is unaffected on any device — the text half runs on the Pi.
