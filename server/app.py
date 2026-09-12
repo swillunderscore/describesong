@@ -276,9 +276,11 @@ def submit(body: SubmitIn, request: Request):
             if curv is None or lead["votes"] > curv["votes"] or norm_label(lead["artist"], lead["title"]) == norm_label(cur["artist"], cur["title"]):
                 c.execute("UPDATE tracks SET artist=?, title=?, album=? WHERE id=? AND verified=0", (lead["artist"], lead["title"], lead["album"], tid))
         # Vectors: a resubmission averages in (2 KB each; float16 on disk).
-        if events:
+        if events is not None:
+            # {} means the tagger listened and heard nothing above threshold; a
+            # sentinel row keeps that from being re-tagged on every re-scan
             c.execute("DELETE FROM track_events WHERE track_id=?", (tid,))
-            c.executemany("INSERT INTO track_events(track_id, cls, prob) VALUES(?,?,?)", [(tid, k, v) for k, v in events.items()])
+            c.executemany("INSERT INTO track_events(track_id, cls, prob) VALUES(?,?,?)", [(tid, k, v) for k, v in events.items()] or [(tid, "-", 0.0)])
         if vote_only: return {"ok": True, "track_id": tid, "vote": True, "events": len(events)}
         old = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
         if old:
@@ -297,6 +299,7 @@ def submit(body: SubmitIn, request: Request):
                           (tid, body.year, json.dumps([body.genre.strip().lower()]) if body.genre else None, None, "tags", now))
     name_facts(tid)
     if body.mbid: FACTS.enqueue(tid, body.mbid)
+    else: FACTS.enqueue_name(tid, body.artist, body.title)   # unidentified: the artist's country and the song's year by NAME
     queue_lyrics(tid)
     if new_track: publish_stats()
     return {"ok": True, "track_id": tid}
@@ -323,7 +326,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     if fields.get("year"):
         y = _facts.parse(fields["year"]); stated["year_from"], stated["year_to"] = y["year_from"] or stated["year_from"], y["year_to"] or stated["year_to"]
     if fields.get("country"):
-        c = _facts.parse(fields["country"]); cc = _facts.COUNTRIES.get(fields["country"].lower()); stated["country"] = c["country"] or (frozenset([cc]) if cc else None) or _facts.REGIONS.get(fields["country"].lower()) or stated["country"]
+        stated["country"] = _facts.place(fields["country"]) or stated["country"]
     qv = text_embed(sound_q if len(sound_q) >= 2 else q)
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     # a stated fact filters AFTER retrieval, so retrieve deep enough that a narrow
@@ -537,9 +540,9 @@ def quoted_hits(phrases, limit=200):
 import mbfacts as _mb, facts as _facts
 def _store_facts(tid, year, genres, country, source):
     with db() as c:
-        row = c.execute("SELECT script, lang, year FROM track_facts WHERE track_id=?", (tid,)).fetchone()
+        row = c.execute("SELECT script, lang, year, genres FROM track_facts WHERE track_id=?", (tid,)).fetchone()
         c.execute("INSERT OR REPLACE INTO track_facts(track_id, year, genres, country, source, fetched, script, lang) VALUES(?,?,?,?,?,?,?,?)",
-                  (tid, year or (row["year"] if row else None), json.dumps(genres) if genres else None, country, source, time.time(), row["script"] if row else None, row["lang"] if row else None))
+                  (tid, year or (row["year"] if row else None), json.dumps(genres) if genres else (row["genres"] if row else None), country, source, time.time(), row["script"] if row else None, row["lang"] if row else None))
 def _artist_get(mbid):
     with db() as c: r = c.execute("SELECT country FROM artists WHERE mbid=?", (mbid,)).fetchone()
     return None if r is None else (r["country"] or "")
@@ -558,6 +561,8 @@ def name_facts(tid):
 with db() as _c:
     for r in _c.execute("SELECT t.id FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE f.track_id IS NULL OR f.script IS NULL AND f.lang IS NULL").fetchall(): name_facts(r["id"])
     for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR (f.country IS NULL AND f.source='musicbrainz'))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
+    # unidentified tracks: look the artist up by name (country) and the title (year)
+    for r in _c.execute("SELECT t.id, t.artist, t.title FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NULL AND (f.source IS NULL OR f.source IN ('names', 'tags'))").fetchall(): FACTS.enqueue_name(r["id"], r["artist"], r["title"])
 print("facts: queued", FACTS.q.qsize())
 
 def lyric_hits(q, limit=30):

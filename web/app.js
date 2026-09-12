@@ -260,7 +260,8 @@ async function scan(all) {
     const el = (performance.now() - t0) / 1000, left = done ? el / done * (files.length - done) : 0;
     $("#status").textContent = `${done} of ${files.length} · ${sent} added (${ident} identified, ${sent - ident} unverified)${known ? ` · ${known} already in` : ""}${failed ? ` · ${failed} failed` : ""} · ${backend} · ${fmt(el)} elapsed${done ? ` · about ${fmt(left)} left` : ""}${current ? `\n${current}` : ""}`;
   };
-  const finishOne = f => { doneSet.add(doneKey(f)); saveDone(doneSet); $("#bar").value = ++done; progress(); const pct = Math.round(100 * done / files.length); $("#rScan").style.setProperty("--p", pct); $("#nScan").textContent = pct + "%"; };
+  // ok=false: the file is finished for this run but NOT remembered as done, so the next pick tries it again
+  const finishOne = (f, ok = true) => { if (ok) { doneSet.add(doneKey(f)); saveDone(doneSet); } $("#bar").value = ++done; progress(); const pct = Math.round(100 * done / files.length); $("#rScan").style.setProperty("--p", pct); $("#nScan").textContent = pct + "%"; };
   let confirmChain = Promise.resolve();                       // one dialog at a time
   const confirmSerial = (...a) => (confirmChain = confirmChain.then(() => confirmPrior(...a)));
 
@@ -274,7 +275,7 @@ async function scan(all) {
   // STAGE B (the GPU, the only serial cost): embed → submit, overlapped with the next A.
   const net = new Set();
   const finish = async (f, a, r, ev) => {
-    const { fpr, idr } = a;
+    const { fpr, idr } = a; let good = false;
     try {
       // AcoustID can know the recording but hand back an empty title/artist;
       // keep its id, but never store a blank label when the file has tags.
@@ -283,7 +284,7 @@ async function scan(all) {
       const facts = { year: tags.year || null, genre: tags.genre || null };
       if (!idr.mbid && idr.prior && (idr.prior.artist || idr.prior.title)) {
         if (normL(idr.prior) === normL(label)) {
-          if (!r && !ev) { log(`= ${label.artist || "?"} — ${label.title || f.name} (already in, same label)`); return; }   // nothing new to say (with sounds tagged there is)
+          if (!r && !ev) { log(`= ${label.artist || "?"} — ${label.title || f.name} (already in, same label)`); good = true; return; }   // nothing new to say (with sounds tagged there is)
         } else {
           const ok = await confirmSerial(idr.prior, label);
           if (ok) label = { artist: idr.prior.artist, title: idr.prior.title, album: idr.prior.album };
@@ -291,10 +292,10 @@ async function scan(all) {
       }
       const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, ...facts, events: ev || null, mean: r ? r.mean : null, moments: r ? r.moments : [] });
       const heard = ev ? Object.entries(ev).filter(([, p]) => p >= 0.3).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k]) => k.toLowerCase()).join(", ") : "";
-      if (sub.ok) { if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}${heard ? "  · " + heard : ""}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in${ev ? " — sounds added" + (heard ? ": " + heard : "") : " — label confirmed"})`); }
+      if (sub.ok) { good = true; if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}${heard ? "  · " + heard : ""}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in${ev ? " — sounds added" + (heard ? ": " + heard : "") : " — label confirmed"})`); }
       else { failed++; log(`✗ ${f.name}: ${sub.detail || "rejected"}`); }
     } catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); }
-    finally { finishOne(f); }
+    finally { finishOne(f, good); }
   };
   let nextA = stageA(files[0]).catch(e => e);
   for (let i = 0; i < files.length; i++) {
@@ -303,7 +304,7 @@ async function scan(all) {
     current = f.name; progress();
     const a = await nextA;
     if (i + 1 < files.length) nextA = stageA(files[i + 1]).catch(e => e);
-    if (a instanceof Error) { failed++; log(`✗ ${f.name}: ${a.message}`); finishOne(f); continue; }
+    if (a instanceof Error) { failed++; log(`✗ ${f.name}: ${a.message}`); finishOne(f, false); continue; }
     if (a.idr.known) {
       // Already in. Skip the embed. If the index has no sound events for it yet
       // (scanned before the tagger existed), tag it now and send only that;
@@ -312,14 +313,14 @@ async function scan(all) {
       let ev = null;
       if (!a.idr.has_events) { try { ev = (await ask({ type: "events", ref: a.fpr.ref })).events; } catch (err) { noEv++; log(`✗ ${f.name}: sounds not tagged — ${err.message}`); } }
       else await ask({ type: "drop", ref: a.fpr.ref }).catch(() => {});
-      if (a.idr.mbid && !ev) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in${a.idr.has_events ? ", sounds known" : ""})`); finishOne(f); }
+      if (a.idr.mbid && !ev) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in${a.idr.has_events ? ", sounds known" : ""})`); finishOne(f, !!a.idr.has_events); }
       else { const p = finish(f, a, null, ev); net.add(p); p.finally(() => net.delete(p)); }
       continue;
     }
     let r, ev = null;
     try { ev = (await ask({ type: "events", ref: a.fpr.ref, keepHeld: true })).events; } catch (err) { noEv++; log(`✗ ${f.name}: sounds not tagged — ${err.message}`); }
     try { r = await ask({ type: "embed", ref: a.fpr.ref }); }
-    catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); finishOne(f); continue; }
+    catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); finishOne(f, false); continue; }
     const p = finish(f, a, r, ev); net.add(p); p.finally(() => net.delete(p));
     if (net.size >= 4) await Promise.race(net);
   }

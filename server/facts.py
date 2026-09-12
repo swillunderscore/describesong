@@ -4,17 +4,19 @@ it only ever copies what the text says. (The Pi's 1.5B Qwen did this
 correctly but took ~90 s per query on this CPU; a search cannot wait.)"""
 import re
 DECADES = {"fifties": 1950, "sixties": 1960, "seventies": 1970, "eighties": 1980, "nineties": 1990, "noughties": 2000, "two thousands": 2000}
-COUNTRIES = {"norwegian": "NO", "swedish": "SE", "danish": "DK", "finnish": "FI", "icelandic": "IS", "british": "GB", "english": "GB", "scottish": "GB", "welsh": "GB", "irish": "IE", "french": "FR", "german": "DE", "dutch": "NL", "belgian": "BE",
-  "spanish": "ES", "portuguese": "PT", "italian": "IT", "brazilian": "BR", "argentinian": "AR", "mexican": "MX", "colombian": "CO", "cuban": "CU", "jamaican": "JM", "american": "US", "canadian": "CA", "australian": "AU", "japanese": "JP", "korean": "KR", "chinese": "CN",
-  "indian": "IN", "nigerian": "NG", "czech": "CZ", "hungarian": "HU", "romanian": "RO", "bulgarian": "BG", "serbian": "RS", "estonian": "EE", "thai": "TH", "vietnamese": "VN", "indonesian": "ID", "filipino": "PH", "taiwanese": "TW", "saudi": "SA", "ghanaian": "GH", "south african": "ZA", "russian": "RU", "polish": "PL", "ukrainian": "UA", "turkish": "TR", "greek": "GR", "israeli": "IL", "iranian": "IR", "egyptian": "EG", "moroccan": "MA", "malian": "ML", "senegalese": "SN", "congolese": "CD", "ethiopian": "ET"}
-# A region is a set of countries. "scandinavian" was silently ignored (no
-# such single country), which put Madlib above Röyksopp for "scandinavian
-# artist … 2000s". A stated country is always a set from here on.
-REGIONS = {k: frozenset(v.split()) for k, v in {
-  "scandinavian": "NO SE DK FI IS", "scandi": "NO SE DK FI IS", "nordic": "NO SE DK FI IS", "baltic": "EE LV LT", "benelux": "NL BE LU",
-  "iberian": "ES PT", "balkan": "RS HR BA SI MK ME AL BG RO", "latin american": "BR AR MX CO CL PE UY VE CU", "latin america": "BR AR MX CO CL PE UY VE CU",
-  "east asian": "JP KR CN TW", "west african": "NG GH SN ML", "caribbean": "JM CU TT BB PR DO HT", "middle eastern": "SA EG LB IR IL TR AE JO",
-  "british isles": "GB IE"}.items()}   # no "uk"/"usa": "uk garage" is a genre, and a stated country DROPS tracks that contradict it
+import places as _places
+# Demonyms ("norwegian") match in free text; place words ("scandinavian",
+# "western", "spanish-speaking") too; country NAMES only as a field value
+# ("from norway", "country is norway") — see places.py for why.
+COUNTRIES = {k: v for k, v in _places.DEMONYMS.items()}
+PLACES = _places.PLACES
+REGIONS = PLACES
+_LONGEST = lambda d: sorted(d, key=len, reverse=True)
+_FROM_RE = re.compile(r"(?<![\w])from ((?:the )?(?:" + "|".join(re.escape(n) for n in _LONGEST([x for x in list(_places.NAMES) + list(_places.PLACE_NAMES) if not x.startswith("the ")])) + r"))(?![\w])")
+def place(value):
+    """the value of a place field -> set of country codes, or None: a name, a demonym or a place word"""
+    p = parse(value)["country"]
+    return p or _places.place(value)
 
 
 def parse(q):
@@ -48,11 +50,14 @@ def parse(q):
     if re.search(r"\binstrumental\b|\bno vocals?\b|\bwithout vocals?\b|\bno singing\b|\bno lyrics\b", ql): out["instrumental"] = True; strip += re.findall(r"\binstrumental\b|\bno vocals?\b|\bwithout vocals?\b|\bno singing\b|\bno lyrics\b", ql)
     if re.search(r"\b(female|woman|girl|women)\b.{0,12}\b(vocal|vocals|singer|singing|voice|rapper)\b|\b(she|her) (sings|raps)\b", ql): out["vocals"] = "female"
     elif re.search(r"\b(male|man|guy|men|dude)\b.{0,12}\b(vocal|vocals|singer|singing|voice|rapper)\b|\b(he|his) (sings|raps)\b", ql): out["vocals"] = "male"
-    for word, code in COUNTRIES.items():
-        if re.search(r"\b" + word + r"\b", ql): out["country"] = frozenset([code]); strip.append(word); break
+    for word in _LONGEST(COUNTRIES):                      # longest first: "south african" before "african"
+        if re.search(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", ql): out["country"] = frozenset([COUNTRIES[word]]); strip.append(word); break
     if not out["country"]:
-        for word, codes in REGIONS.items():
-            if re.search(r"\b" + word + r"\b", ql): out["country"] = codes; strip.append(word); break
+        m = _FROM_RE.search(ql)
+        if m: out["country"] = _places.place(m.group(1)); strip.append(m.group(0).strip())
+    if not out["country"]:
+        for word in _LONGEST(PLACES):
+            if re.search(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", ql): out["country"] = PLACES[word]; strip.append(word); break
     s = ql
     for w in strip: s = s.replace(w, " ")
     out["stripped"] = re.sub(r"\s+", " ", re.sub(r"\b(from|around|about|circa|by a|by an|in the)\s*$", "", s)).strip(" ,")
@@ -79,19 +84,21 @@ def lang_hints(text):
         for c in _LETTER_HINTS.get(ch, []):
             if c not in out: out.append(c)
     return out
-FIELDS = ("artist", "by", "title", "song", "album", "year", "country", "from", "lyrics", "lyric", "words", "sound", "sounds")
+FIELDS = ("artist", "band", "singer", "by", "title", "song", "album", "year", "country", "from", "lyrics", "lyric", "words", "sound", "sounds")
 _FIELD_RE = re.compile(r"(?<![\w])(" + "|".join(FIELDS) + r")\s*:\s*", re.I)
+_IS_RE = re.compile(r"(?<![\w])(?:the\s+)?(artist|band|singer|title|song|album|year|country|lyrics|lyric|words)\s+is\s+", re.I)
 def parse_fields(q):
     """'beepy synth artist: röyksopp year: 2001 lyrics: "up all night"' ->
     {'artist': 'röyksopp', 'year': '2001', 'lyrics': 'up all night', 'free': 'beepy synth'}.
     Precision on demand: anything labelled is matched as that thing, the rest is the sound."""
+    q = _IS_RE.sub(lambda m: m.group(1) + ": ", q)          # "artist is kendrick" is "artist: kendrick"
     parts = _FIELD_RE.split(q); out = {"free": parts[0].strip(" ,;")}
     for i in range(1, len(parts) - 1, 2):
         k = parts[i].lower(); raw = parts[i + 1]
         # a value is the quoted phrase if it starts with a quote, else up to the first comma; the rest is free text
         m = re.match(r'\s*["“]([^"”]+)["”]\s*(.*)$', raw, re.S) or re.match(r"\s*([^,;]+)[,;]?\s*(.*)$", raw, re.S)
         v, rest = (m.group(1).strip(), m.group(2).strip(" ,;")) if m else (raw.strip(), "")
-        k = {"by": "artist", "song": "title", "lyric": "lyrics", "words": "lyrics", "sounds": "sound"}.get(k, k)
+        k = {"by": "artist", "band": "artist", "singer": "artist", "song": "title", "lyric": "lyrics", "words": "lyrics", "sounds": "sound"}.get(k, k)
         if k == "from": k = "year" if re.search(r"\d{2}", v) or any(w in v.lower() for w in DECADES) else "country"
         if k == "sound": out["free"] = (out["free"] + " " + v).strip()
         elif v: out[k] = v

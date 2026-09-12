@@ -610,3 +610,29 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   look up unverified artists by name on MusicBrainz for a country.
 - Scan client now retries through a server restart (connection refused,
   502/503/504) instead of marking the file failed.
+
+### BUILT 2026-09-12 — places, "is", names for unidentified tracks, empty-tag sentinel
+- server/places.py: 186 countries with name aliases, demonyms, continent,
+  sub-region, languages, extra groups. Every place word is DERIVED from it:
+  79 group adjectives for free text (nordic, western, west african,
+  spanish-speaking, balkan, post-soviet, mediterranean…) and 55 noun forms
+  for "from X" / "country is X" (west africa, the middle east, scandinavia).
+  Country names never match in free text (Chad, Jordan, Georgia, Turkey).
+  Longest match first ("south african" before "african").
+- "artist is kendrick", "country is norway", "the singer is billie eilish":
+  same as the colon syntax; a value runs to the next comma. Also
+  band/singer as artist fields, and bare "from norway" / "from the
+  netherlands" in free text.
+- Unidentified tracks (287) now get a country by ARTIST NAME on MusicBrainz
+  (exact normalised name match with search score ≥ 90, first artist of a
+  credit list) and a year by artist+title recording search. Source
+  "musicbrainz-name". A wrong country drops the track from every search
+  that states one, hence the strictness. Queued at startup and on submit.
+- A tagger that heard nothing stores a sentinel row, so the track is not
+  re-tagged on every re-scan; files whose tagging or submit FAILED are no
+  longer remembered as done, so the next pick retries them.
+- Decided without asking (say if wrong): "western" = W/N/S Europe + US CA
+  AU NZ; "scandinavian" includes FI IS FO; "middle eastern" excludes the
+  Caucasus and the Maghreb, includes EG; "latin american" includes the
+  Spanish/Portuguese/French Caribbean; a stated place still DROPS tracks
+  whose known country contradicts it.
