@@ -977,3 +977,16 @@ MEASURED LIVE right after the switch:
 | dusty sample-based beat with a spoken word sample | 643 | **1** |
 | grungy lo-fi trip hop beat | 297 | **16** |
 | aggressive dubstep with wobbling bass | SAN DIEGO VIP #1 | SAN DIEGO VIP #1 |
+
+### BUILT 2026-09-12 — the page says whether it can use the visitor's graphics card
+- Asks for a real WebGPU adapter (not just `navigator.gpu`, which can exist and
+  still fail), before a scan rather than after, and says what would fix it:
+  Firefox -> Windows only so far, use Chrome/Edge; Safari -> update or use
+  Chrome/Edge; Linux -> chrome://flags, Unsafe WebGPU Support; otherwise use
+  Chrome or Edge. Verified live: "Your graphics card is being used."
+- The 81 tracks with no MuLan vector are NOT missing from the site. They keep
+  their names, lyrics, year, country and sound events, and are still found by
+  all of those (verified: "funky stuff", "artist is dave brubeck"). The only
+  thing they cannot be found by is a description of the sound, until someone
+  scans the file again. Fishy fishy is NOT one of them — he guessed it was; it
+  has a MuLan vector and ranks #1 for a description of it.
