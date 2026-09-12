@@ -131,16 +131,13 @@ void main() {
 }`;
   const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(x)); return x; };
   const prog = (vs, fs) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; };
-  let pSim, pBlit, pGauss, pSplat, pGlass;
-  try { pSim = prog(VS, WAVESIM); pBlit = prog(VS, BLIT); pGauss = prog(VS, GAUSS); pSplat = prog(SPLAT_VS, SPLAT_FS); pGlass = prog(VS, GLASS); }
-  catch (e) { say("shader failed: " + e.message.slice(0, 80)); console.error(e); return; }
+  let pSim, pBlit, pGauss, pSplat, pGlass, vao, uS, uB, uG, uP, uL;
   const U = (p, n) => gl.getUniformLocation(p, n);
-  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
   const mkTex = (w, h, fmt, filt) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, fmt === gl.RGBA16F ? gl.RGBA : gl.RGBA, fmt === gl.RGBA16F ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
   const mkFb = t => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
   const clear = (f, r = 0, g = 0) => { gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.clearColor(r, g, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); };
-  const skyTex = mkTex(2, 2, gl.RGBA, gl.LINEAR); let skyV = -1;
+  let skyTex, skyV = -1;
 
   // ---- buffers, sized by tier (his SIM = 1024 with the caustic at 1024) ----
   const TIERS = [null, { sim: 384, cau: 384 }, { sim: 640, cau: 640 }, { sim: 1024, cau: 1024 }];
@@ -151,7 +148,7 @@ void main() {
     half = mkTex(SIM / 2, SIM / 2, gl.RGBA16F, gl.LINEAR); halfFb = mkFb(half);
     smooth = mkTex(SIM / 4, SIM / 4, gl.RGBA16F, gl.LINEAR); smoothFb = mkFb(smooth); smoothTmp = mkTex(SIM / 4, SIM / 4, gl.RGBA16F, gl.LINEAR); smoothTmpFb = mkFb(smoothTmp);
     cau = mkTex(CAU, CAU, gl.RGBA16F, gl.LINEAR); cauFb = mkFb(cau); cauTmp = mkTex(CAU, CAU, gl.RGBA16F, gl.LINEAR); cauTmpFb = mkFb(cauTmp);
-    stepCount = 0; seaEnergy = 0; pendingSim = 0; strokes = []; amb = null;
+    stepCount = 0; seaEnergy = 0; pendingSim = 0; strokes = []; amb = null; drawn = false;
   }
   // ---- input: the cursor is a fingertip trailed in the pool; a click is a tap ----
   // Screen -> wave uv, exactly as sampleMouseWake(): 0.5 + g * 0.85 * scale * 2 * VIS, g = (cursor - desk/2) / desk.x
@@ -173,7 +170,6 @@ void main() {
   // ---- the step (stepWaveSim) ----
   let stepCount = 0, seaEnergy = 0, pendingSim = 0, amb = null, lastT = 0;
   const rnd = () => Math.random();
-  const uS = { tex: U(pSim, "tex"), texel: U(pSim, "texelSize"), ws: U(pSim, "waveSpeed"), damp: U(pSim, "damping"), vol: U(pSim, "volComp"), bed: U(pSim, "bedVariation"), visc: U(pSim, "viscosity"), max: U(pSim, "maxSpeed"), bias: U(pSim, "hBias"), seg: U(pSim, "sSeg"), par: U(pSim, "sPar"), imp: U(pSim, "impulse2") };
   function simSteps(dReal) {
     const speed = Math.max(0, Math.min(4, W.speed));
     const SUB = speed >= 0.4 ? 1 : (speed >= 0.15 ? 2 : 4), sub = STEP / SUB;
@@ -208,7 +204,6 @@ void main() {
     return { SUB, frac: Math.min(1, pendingSim / sub) };
   }
   // ---- band-limited copy of the surface, for the warp (buildSmoothWave) ----
-  const uB = { tex: U(pBlit, "tex") }, uG = { tex: U(pGauss, "tex"), dir: U(pGauss, "direction"), r: U(pGauss, "radius") };
   function blit(src, dstFb, w, h) { gl.useProgram(pBlit); gl.bindFramebuffer(gl.FRAMEBUFFER, dstFb); gl.viewport(0, 0, w, h); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform1i(uB.tex, 0); gl.drawArrays(gl.TRIANGLES, 0, 3); }
   function gauss(src, tmpFb, tmp, dstFb, w, h, radiusTexels) {
     gl.useProgram(pGauss); gl.uniform1f(uG.r, radiusTexels);
@@ -221,7 +216,6 @@ void main() {
     gauss(smooth, smoothTmpFb, smoothTmp, smoothFb, SIM / 4, SIM / 4, 3 * sigmaSim / 4);
   }
   // ---- caustic: forward splat, then the reconstruction blur ----
-  const uP = { tex: U(pSplat, "tex"), frac: U(pSplat, "waveSubFrac"), bias: U(pSplat, "waveBias"), k: U(pSplat, "causticK"), n: U(pSplat, "gridN") };
   function buildCaustic(frac) {
     gl.useProgram(pSplat); gl.bindFramebuffer(gl.FRAMEBUFFER, cauTmpFb); gl.viewport(0, 0, CAU, CAU); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
@@ -230,7 +224,6 @@ void main() {
     const lensK = causticK() * 10; gauss(cauTmp, cauFb, cau, cauTmpFb, CAU, CAU, Math.max(2.1, Math.min(12, lensK * 30)));   // result lands in cauTmp
   }
   // ---- glass ----
-  const uL = { sky: U(pGlass, "uSky"), wave: U(pGlass, "waveTex"), sm: U(pGlass, "waveSmoothTex"), cau: U(pGlass, "causticTex"), full: U(pGlass, "fullSize"), frac: U(pGlass, "waveSubFrac"), bias: U(pGlass, "waveBias"), k: U(pGlass, "causticK"), int: U(pGlass, "shimmerIntensity"), sc: U(pGlass, "shimmerScale"), dep: U(pGlass, "shimmerDepth"), abs: U(pGlass, "shimmerAbsorption"), murk: U(pGlass, "shimmerMurk"), bud: U(pGlass, "budgetPx") };
   function glass(frac) {
     if (skyV !== TC.skyVersion) { skyV = TC.skyVersion; gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, skyTex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, TC.sky); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); }
     gl.useProgram(pGlass); gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cv.width, cv.height);
@@ -242,6 +235,25 @@ void main() {
     gl.uniform1f(uL.int, W.intensity); gl.uniform1f(uL.sc, W.scale); gl.uniform1f(uL.dep, W.depth); gl.uniform1f(uL.abs, W.absorption); gl.uniform1f(uL.murk, W.murk); gl.uniform1f(uL.bud, 36);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
+  // Everything the GPU owns: built once, and again after a context loss.
+  function build() {
+    pSim = prog(VS, WAVESIM); pBlit = prog(VS, BLIT); pGauss = prog(VS, GAUSS); pSplat = prog(SPLAT_VS, SPLAT_FS); pGlass = prog(VS, GLASS);
+    vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    skyTex = mkTex(2, 2, gl.RGBA, gl.LINEAR); skyV = -1;
+    uS = { tex: U(pSim, "tex"), texel: U(pSim, "texelSize"), ws: U(pSim, "waveSpeed"), damp: U(pSim, "damping"), vol: U(pSim, "volComp"), bed: U(pSim, "bedVariation"), visc: U(pSim, "viscosity"), max: U(pSim, "maxSpeed"), bias: U(pSim, "hBias"), seg: U(pSim, "sSeg"), par: U(pSim, "sPar"), imp: U(pSim, "impulse2") };
+    uB = { tex: U(pBlit, "tex") }, uG = { tex: U(pGauss, "tex"), dir: U(pGauss, "direction"), r: U(pGauss, "radius") };
+    uP = { tex: U(pSplat, "tex"), frac: U(pSplat, "waveSubFrac"), bias: U(pSplat, "waveBias"), k: U(pSplat, "causticK"), n: U(pSplat, "gridN") };
+    uL = { sky: U(pGlass, "uSky"), wave: U(pGlass, "waveTex"), sm: U(pGlass, "waveSmoothTex"), cau: U(pGlass, "causticTex"), full: U(pGlass, "fullSize"), frac: U(pGlass, "waveSubFrac"), bias: U(pGlass, "waveBias"), k: U(pGlass, "causticK"), int: U(pGlass, "shimmerIntensity"), sc: U(pGlass, "shimmerScale"), dep: U(pGlass, "shimmerDepth"), abs: U(pGlass, "shimmerAbsorption"), murk: U(pGlass, "shimmerMurk"), bud: U(pGlass, "budgetPx") };
+  }
+  try { build(); } catch (e) { say("shader failed: " + e.message.slice(0, 80)); console.error(e); return; }
+  // Two ways an opaque canvas shows up BLACK instead of water, both seen on
+  // his machine: switched on while paused for a scan (nothing had ever been
+  // drawn into it), and the GPU taking the context back under load. So: one
+  // frame is always drawn before the canvas is trusted, and a lost context
+  // hides the canvas (the sky shows) until the GPU gives it back.
+  let lost = false, drawn = false;
+  cv.addEventListener("webglcontextlost", e => { e.preventDefault(); lost = true; cv.hidden = true; say("GPU context lost — sky until it is back"); });
+  cv.addEventListener("webglcontextrestored", () => { try { build(); if (tier) alloc(tier); lost = false; cv.hidden = !tier; status(); } catch (e) { say("shader failed: " + e.message.slice(0, 80)); } });
   // ---- tiers: measured on this GPU, overridable, paused while scanning ----
   let auto = 2, probing = true, probeT = [];
   const QN = ["off", "low", "mid", "high"];
@@ -258,14 +270,14 @@ void main() {
     if (t === tier) return; tier = t;
     if (!t) { cv.hidden = true; return; }
     if (TIERS[t].sim !== SIM) alloc(t);            // only a resolution change rebuilds the field
-    cv.hidden = false;
+    cv.hidden = lost;
   }
   const status = extra => say(off() ? "off" : (W.quality >= 0 ? QN[W.quality] : `auto → ${QN[auto]}`) + (document.documentElement.dataset.scanning ? " · paused for the scan" : paused() ? " · paused" : "") + (extra || (probing ? " · measuring…" : "")));
   let refresh = () => {};
   function loop(now) {
     requestAnimationFrame(loop);
     const want = wanted(); if (want !== tier) { apply(want); status(); }
-    if (!tier || paused()) { lastT = now; return; }
+    if (!tier || lost || (paused() && drawn)) { lastT = now; return; }   // paused: still draw the first frame, a blank canvas is black
     const dReal = lastT ? (now - lastT) / 1000 : 0; lastT = now;
     if (probing && dReal > 0 && dReal < 0.2) { probeT.push(dReal * 1000); if (probeT.length >= 110) {
       const s = probeT.slice(20), mean = s.reduce((a, b) => a + b, 0) / s.length, base = Math.min(...s); probing = false;
@@ -273,9 +285,9 @@ void main() {
       status(` · ${mean.toFixed(1)} ms/frame on this GPU`);
     } }
     const { frac } = simSteps(dReal);
-    buildSmooth(); buildCaustic(frac); glass(frac);
+    buildSmooth(); buildCaustic(frac); glass(frac); drawn = true;
   }
-  addEventListener("resize", () => { if (tier) { cv.width = innerWidth; cv.height = innerHeight; } });
+  addEventListener("resize", () => { if (tier) { cv.width = innerWidth; cv.height = innerHeight; drawn = false; } });   // resizing clears the canvas
   document.addEventListener("visibilitychange", () => setTimeout(refresh, 0));
   apply(wanted()); status(); requestAnimationFrame(loop);
   refresh = () => { const w = wanted(); if (w !== tier) apply(w); status(); };

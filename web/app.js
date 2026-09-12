@@ -244,7 +244,7 @@ async function scan(all) {
   if (skipped) log(`↷ ${skipped} file${skipped === 1 ? "" : "s"} finished earlier — skipped`);
   if (!files.length) { $("#status").textContent = `Nothing new — all ${audio.length} audio files here were added earlier.`; return; }
   $("#bar").max = files.length; $("#bar").value = 0;
-  let done = 0, sent = 0, ident = 0, failed = 0, known = 0, current = "";
+  let done = 0, sent = 0, ident = 0, failed = 0, known = 0, noEv = 0, current = "";
   scanning = true; stopRequested = false; $("#stop").hidden = false; $("#stop").textContent = "Stop";
   document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to CLAP now
   const t0 = performance.now();
@@ -305,14 +305,15 @@ async function scan(all) {
       // unverified tracks also offer our tags as a label vote.
       known++;
       let ev = null;
-      if (!a.idr.has_events) { try { ev = (await ask({ type: "events", ref: a.fpr.ref })).events; } catch (err) { log(`✗ ${f.name}: ${err.message}`); } }
+      if (!a.idr.has_events) { try { ev = (await ask({ type: "events", ref: a.fpr.ref })).events; } catch (err) { noEv++; log(`✗ ${f.name}: sounds not tagged — ${err.message}`); } }
       else await ask({ type: "drop", ref: a.fpr.ref }).catch(() => {});
-      if (a.idr.mbid && !ev) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in)`); finishOne(f); }
+      if (a.idr.mbid && !ev) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in${a.idr.has_events ? ", sounds known" : ""})`); finishOne(f); }
       else { const p = finish(f, a, null, ev); net.add(p); p.finally(() => net.delete(p)); }
       continue;
     }
     let r, ev = null;
-    try { ev = (await ask({ type: "events", ref: a.fpr.ref, keepHeld: true })).events; r = await ask({ type: "embed", ref: a.fpr.ref }); }
+    try { ev = (await ask({ type: "events", ref: a.fpr.ref, keepHeld: true })).events; } catch (err) { noEv++; log(`✗ ${f.name}: sounds not tagged — ${err.message}`); }
+    try { r = await ask({ type: "embed", ref: a.fpr.ref }); }
     catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); finishOne(f); continue; }
     const p = finish(f, a, r, ev); net.add(p); p.finally(() => net.delete(p));
     if (net.size >= 4) await Promise.race(net);
@@ -320,7 +321,7 @@ async function scan(all) {
   await Promise.all(net);
   scanning = false; $("#stop").hidden = true; current = "";
   delete document.documentElement.dataset.scanning;
-  $("#status").textContent = `${stopRequested ? "stopped" : "done"} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
+  $("#status").textContent = `${stopRequested ? "stopped" : "done"} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
 }
 
 async function decode(file) {

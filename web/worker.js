@@ -12,13 +12,26 @@ let DEVICE = "";
 // own labels: 88-100 % precision on hand claps and whistling, where CLAP was
 // 0-8 %. Loaded on demand the first time a track needs tagging.
 const AST = "Xenova/ast-finetuned-audioset-10-10-0.4593";
-let astProc = null, astModel = null, EVENTS = null;
+let astProc = null, astModel = null, EVENTS = null, astReady = null, astRung = 0;
+// One load, shared. The scan asks for several tracks at once and each call
+// used to start its own copy of the model: on the first library re-scan that
+// was four 174 MB instantiations side by side, the GPU ran out, and nearly
+// every track logged ✗. A failed load is forgotten so the next track tries
+// the next rung; an exhausted ladder fails fast instead of re-downloading.
+const AST_LADDER = [{ dtype: "fp16", device: "webgpu" }, { dtype: "q8", device: "wasm" }];
 async function initAst() {
   if (astModel) return;
-  EVENTS = await (await fetch("events.json")).json();
-  astProc = await AutoProcessor.from_pretrained(AST);
-  try { astModel = await AutoModelForAudioClassification.from_pretrained(AST, { dtype: "fp16", device: DEVICE || "wasm" }); }
-  catch (e) { astModel = await AutoModelForAudioClassification.from_pretrained(AST, { dtype: "q8", device: "wasm" }); }
+  if (!astReady) astReady = (async () => {
+    EVENTS ||= await (await fetch("events.json")).json();
+    astProc ||= await AutoProcessor.from_pretrained(AST);
+    if (!navigator.gpu && astRung === 0) astRung = 1;
+    for (; astRung < AST_LADDER.length; astRung++) {
+      try { astModel = await AutoModelForAudioClassification.from_pretrained(AST, AST_LADDER[astRung]); return; }
+      catch (e) { console.warn("sound tagger: load failed on", AST_LADDER[astRung].device, "-", e.message); }
+    }
+    throw new Error("the sound tagger could not load in this browser");
+  })().finally(() => { astReady = null; });
+  await astReady;
 }
 // 48 kHz -> 16 kHz: a short low-pass then every third sample. Classification
 // is indifferent to the last dB of the top octave.
@@ -29,6 +42,15 @@ function to16k(x) {
 }
 async function tagEvents(pcm, sampleRate) {
   await initAst();
+  try { return await tagWith(pcm, sampleRate); }
+  catch (e) {
+    // a GPU that fails mid-inference (device lost under load) is not retried on the GPU
+    if (astRung !== 0) throw e;
+    console.warn("sound tagger: WebGPU failed, retrying on WASM -", e.message);
+    astModel = null; astRung = 1; await initAst(); return await tagWith(pcm, sampleRate);
+  }
+}
+async function tagWith(pcm, sampleRate) {
   const wins = windows(pcm, sampleRate); const best = {};
   const id2label = astModel.config.id2label;
   for (const wv of wins) {
