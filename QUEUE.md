@@ -694,3 +694,45 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   different slices, so two stores could give ~60 s. Not measured.
 - FLAC: verified end to end in the browser (decode, Vorbis-comment tags,
   fingerprint, embed, submit — 3 s). mp3/flac/wav/m4a/ogg/opus accepted.
+
+### MEASURED 2026-09-12 — his friend's track, CLAP vs MuLan (cached trial vectors, same 2,286 tracks)
+Where "Fishy fishy" lands for the words he actually typed:
+
+| query                                                | CLAP | MuLan |
+|------------------------------------------------------|------|-------|
+| grungy lo-fi trip hop beat                           |  297 |    23 |
+| trip hop sample-based beat neo soul lo-fi hip hop *  | 1280 |    10 |
+| dusty sample-based beat with a spoken word sample    |  643 |     1 |
+| kids voice sample lofi hip hop                       |  807 |     4 |
+| speech sample over a lofi beat                       |  105 |    31 |
+| sesame street sample                                 | 2255 |   140 |
+| grunge                                               |  561 |  1619 |
+| **median over 10 queries**                           |**429**| **27** |
+
+* the exact words the site's own "what the index hears" box showed him.
+- Neither model knows "grunge" as a texture; MuLan is worse on that one word
+  and better on every phrase. CLAP is not broken, it is trained on general
+  audio-caption pairs (AudioSet-scale) where "grunge" is 90s rock; MuLan is
+  trained on music with music descriptions.
+- COST of MuLan in the browser: 663M params = 1.3 GB fp16 / ~660 MB int8,
+  against CLAP's ~200 MB. transformers.js has no MuQ support, so it needs a
+  hand-written ONNX Runtime Web path. Not a config change.
+
+### MEASURED 2026-09-12 — can the browser transcribe lyrics itself?
+10 tracks that DO have LRCLIB lyrics; transcribe locally, hash trigrams the
+same way lyrics.py does, measure overlap with the real ones.
+
+| model            | median overlap | min | max | s/track (2060-class GPU) |
+|------------------|----------------|-----|-----|--------------------------|
+| whisper-base     | 14 %           | 0 % | 47 %| 3.3 |
+| whisper-small    | 26 %           | 0 % | 53 %| 4.4 |
+
+- Two tracks at 0 % both times: sung-through with heavy backing. Whisper is
+  a speech model; singing over music is its worst case.
+- NO ACCOUNTS AND NO LYRIC UPLOADS NEEDED, whatever we decide: the index has
+  only ever stored hashed trigrams, never text (server/lyrics.py). A browser
+  transcription would submit the same hashes LRCLIB-derived ones use. His
+  worry about users uploading lyrics is already designed out.
+- Where it would actually pay: the 715 tracks LRCLIB does not have, which
+  today are unfindable by words at all. Would need its own tier ("heard, not
+  looked up") so a transcription never outranks real lyrics.
