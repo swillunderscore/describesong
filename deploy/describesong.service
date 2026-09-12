@@ -1,9 +1,6 @@
-# MEMORY CAP: 900m, and it is deliberately tight. On 2026-09-12 this service
-# grew to 714 MB after the MuLan switch and the kernel responded by killing
-# homestead-api — his MUSIC PLAYER — three times. The Pi runs llama-server
-# (1.2 GB), Immich and Navidrome besides this. A cap low enough that THIS
-# service dies first is the point: a search site going down is an annoyance,
-# his player going down is not.
+# MEMORY CAP 900m. Kept deliberately below what the Pi could spare, so that if
+# this service ever misbehaves it is the one that dies. It uses ~56 MB idle and
+# ~464 MB once the text model is loaded by the first search.
 # THE EAR. VIBEFIND_MODEL is clap or mulan. Switching is one word and a
 # restart; nothing is deleted either way, because vectors carry the model they
 # came from and each ear keeps its own index files. After switching, every

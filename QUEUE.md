@@ -1099,15 +1099,22 @@ Angel Russell "No It Isn't So", 공중도둑 "Ahhhh, These Chains!", Gucci Mane
 "Walk With a Waddle", Metro Station "Disco". No file for any of them on this
 machine or the Pi library.
 
-### BROKE AND FIXED 2026-09-12 — I OOM-killed his music player
-At 18:06 the kernel killed homestead-api three times. Cause: this service grew
-to 714 MB during the MuLan switch (ONNX Runtime pre-packing, since fixed) on a
-Pi that also runs llama-server at 1.2 GB, Immich and Navidrome. His desktop
-player's "add from the web" search stopped returning anything because its
-backend was dead, not because the search was broken — YouTube/SoundCloud were
-answering fine the whole time (verified: 12 results, the official audio at
-301 s). It came back on its own restart; his app just needed a retry.
-- The memory cause is fixed (`session.disable_prepacking`, 714 -> 56 MB).
-- AND the container cap is now 900m, down from 1500m, deliberately tight: if
-  this service ever misbehaves again it should be the thing that dies. A
-  search site going down is an annoyance; his player going down is not.
+### CORRECTED 2026-09-12 — homestead-api OOM: what is proven and what is not
+I first wrote here that describesong's memory killed his music player. THAT WAS
+WRONG and I asserted it before checking. The kernel log says:
+    constraint=CONSTRAINT_MEMCG
+    oom_memcg=/user.slice/.../homestead-api.service
+    Killed process (yt-dlp)
+PROVEN: homestead-api.service carries its own `MemoryMax=256M`. The kill was
+inside THAT cgroup, against THAT limit. The Pi had ~5 GB free. describesong was
+not involved. It has happened 3 times ever, all within 15 s at 18:06 on
+2026-09-12, never before or since. A search measured today peaks at 66 MB of
+the 256 MB with 2 yt-dlp processes, so the limit is not normally tight.
+NOT PROVEN: what pushed it over at 18:06. I was doing heavy file I/O on the Pi
+in that window (a 606 MB model upload, and earlier an 11 GB library copy into
+/tmp that I aborted) and that is the obvious suspect, but nothing records it
+and I cannot demonstrate it. Unknown.
+NOT CHANGED: homestead-api's 256M limit. Raising it would treat a symptom of a
+cause I do not understand, on a limit with 4x headroom in normal use.
+LESSON: three times in this session I named a cause before checking it. The
+kernel log had the answer in one line and I did not read it first.
