@@ -317,7 +317,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     small = n < MIN_FOR_STATS
     med = CAL_FLOOR if small else med_all
     top = top_all; gap = top - med
-    broad = (not small) and gap < BROAD_GAP
+    broad = (not small) and gap < BROAD_GAP and not via     # a name or lyric match IS a clear winner
     res = []
     for tid, s in zip(ids, scores):
         r = rows.get(tid)
