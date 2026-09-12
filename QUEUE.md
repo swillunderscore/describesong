@@ -409,3 +409,18 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   tie and leaned on the cost (9× compute, 1.3 GB download); it was not a tie.
   He is right. Decision on MuLan is his; it would mean an ONNX export, a
   re-scan of every track, and desktop-only scanning.
+
+### Measured 2026-09-12 — LLM in the search path: NO (on this Pi)
+- Qwen2.5-1.5B (homestead's llama-server, CPU) extracts facts correctly with
+  a JSON grammar but takes ~90 s per query (1.4 tok/s; prompt eval 30-40 s).
+  Facts now come from server/facts.py — patterns, microseconds, copies only
+  what the text says (years, decades ±, early/mid/late, instrumental / no
+  vocals, male/female vocals, nationality → ISO country).
+- Caption rewrite by the same model, measured on 12 real queries against the
+  real index: median rank 60 vs 85 raw, top-10 tied 3/12, swings both ways
+  (Eple 309→52 and 721→44, but 290→1102; BTSTU 415→1311; Consola 4→81);
+  max(raw, caption) median 87. A coin flip, not a feature. Not built.
+- "I need to know" queued deep search: fine idea, nothing measured that it
+  would run yet. Parked.
+- Fewer windows per track measured worse than the all-window mean (median
+  134-175 vs 78). Averaging the whole track stays.
