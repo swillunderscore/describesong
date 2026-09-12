@@ -353,8 +353,8 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
             else:
                 for t, _ in qh: via[t] = ("lyrics", 1.0)
     if stated["year_from"] or stated["country"] or stated["instrumental"]:
-        # STATED FACTS: a track that contradicts one is dropped; a track whose facts
-        # are KNOWN and match ranks above one we know nothing about (otherwise the
+        # STATED FACTS: a track that contradicts one is dropped; the rest rank by how
+        # many stated facts they are KNOWN to satisfy, then by sound (otherwise the
         # unidentified tracks, which can never contradict, float to the top).
         with db() as c:
             want_script = _facts.SCRIPT_COUNTRIES.get(stated["country"] or "")
@@ -372,7 +372,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                 if stated["instrumental"]:
                     asked += 1
                     if r["lyrics_state"] in ("found", "instrumental"): known += 1; ok = ok and r["lyrics_state"] == "instrumental"
-                if ok: tier[r["id"]] = 2 if known == asked else 1
+                if ok: tier[r["id"]] = known          # how many stated facts this track is KNOWN to satisfy
         kept = sorted(((t, sc) for t, sc in zip(ids, scores) if t in tier), key=lambda x: (-tier[x[0]], -x[1]))
         if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
     if offset == 0 and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):
