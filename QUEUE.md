@@ -806,3 +806,25 @@ full GPU, and ONNX Runtime's native providers cover ROCm, CUDA, DirectML and
 CPU from the same file. Power users get speed and MuLan; the browser stays the
 zero-install path. This is what makes MuLan shippable without forcing 638 MB
 on a casual visitor.
+
+### CORRECTION 2026-09-12 — the 10x was per WINDOW, not per track
+At the window counts each model actually ships with (CLAP 8 windows, MuLan 3):
+
+| model | ms/window | windows | per track (CPU) |
+|-------|-----------|---------|-----------------|
+| CLAP  |  55       | 8       | 0.44 s |
+| MuLan | 513       | 3       | 1.54 s |
+
+**3.5x per track, not 10x.** I quoted the per-window figure as if it were the
+per-track one twice. His ~1 s/track in the browser on the first scan is
+normal and healthy, not a symptom of anything wrong.
+
+### DECIDED 2026-09-12 — the local scanner is a portable GUI program, not a CLI
+His call, and the constraints are his:
+- Windows first. A lot of people will not touch a terminal.
+- PORTABLE. Nothing installed, ever. One file, run it, close it, delete it.
+- No CUDA, no ROCm, no PyTorch to install: ONNX Runtime on Windows ships the
+  DirectML provider, which runs on any GPU (AMD, NVIDIA, Intel, integrated)
+  on stock drivers. That is the whole reason ONNX was the right export target.
+- The browser path stays exactly as it is. The program is for people with big
+  libraries who want MuLan quality; the browser is for everyone else.
