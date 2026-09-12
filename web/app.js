@@ -135,22 +135,18 @@ const coverHtml = t => t.play ? `<button type="button" class="cover play" data-i
 // WHAT CAN FIND THIS TRACK. "unverified" only ever said one thing and it was
 // the least useful one; these are the search paths that exist for this row.
 const PATHS = [
-  ["name", "name", "matched to MusicBrainz, so the artist and title are the real ones"],
-  ["words", "words", "lyrics are on LRCLIB, so a line you remember can find it"],
-  ["when", "year", "the year is known, so \u201cearly 2000s\u201d can find it"],
-  ["where", "country", "the country is known, so \u201cnorwegian\u201d can find it"],
-  ["sounds", "sounds", "the tagger heard events in it, so \u201chand claps\u201d can find it"],
+  ["words", "lyrics", "no lyrics for this one, so a line you remember can't find it"],
+  ["when", "year", "the year is unknown, so \u201cearly 2000s\u201d can't find it"],
+  ["where", "country", "the country is unknown, so \u201cnorwegian\u201d can't find it"],
 ];
 function knownHtml(t) {
-  const h = t.has; if (!h) return `<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>`;
+  const h = t.has; if (!h) return "";
+  // only what is MISSING. What the index has needs no announcement, and the
+  // sound is always there — that is the whole point of the site.
   const miss = PATHS.filter(([k]) => !h[k] && !(k === "words" && h.instrumental));
-  const have = PATHS.filter(([k]) => h[k] || (k === "words" && h.instrumental));
-  return `<span class="known" title="${have.map(([, l]) => l).join(", ") || "sound only"}${miss.length ? " · missing: " + miss.map(([, l]) => l).join(", ") : ""}">`
-    + PATHS.map(([k, label, why]) => {
-        const on = h[k] || (k === "words" && h.instrumental);
-        const lab = k === "words" && h.instrumental ? "instrumental" : label;
-        return `<span class="pip ${on ? "on" : "off"}" title="${on ? why : "not known — " + label + " can't find this one"}">${lab}</span>`;
-      }).join("") + `</span>`;
+  if (!miss.length) return "";
+  return `<span class="known" title="the index has no ${miss.map(([, l]) => l).join(", no ")} for this track, so those words can't find it">`
+    + miss.map(([, label, why]) => `<span class="pip off" title="${why}">no ${label}</span>`).join("") + `</span>`;
 }
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][n % 10]);
 function rowHtml(t, i, start) {
