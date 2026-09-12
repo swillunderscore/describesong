@@ -221,7 +221,12 @@ const fmt = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.f
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function post(url, body) {
   for (let i = 0; ; i++) {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    // A server restart (a deploy) is a few seconds of refused connections or
+    // 502s from the tunnel; that is not "this file failed" either.
+    let r;
+    try { r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
+    catch (e) { if (i < 6) { const wait = 5 * (i + 1); $("#status").textContent += `\nserver unreachable — retrying in ${wait} s`; await sleep(wait * 1000); continue; } throw e; }
+    if ((r.status === 502 || r.status === 503 || r.status === 504) && i < 6) { const wait = 5 * (i + 1); $("#status").textContent += `\nserver restarting — retrying in ${wait} s`; await sleep(wait * 1000); continue; }
     if (r.status === 429 && i < 6) { const wait = 20 * (i + 1); $("#status").textContent += `\nserver asked us to slow down — retrying in ${wait} s`; await sleep(wait * 1000); continue; }
     let j = null; try { j = await r.json(); } catch {}
     if (!r.ok) throw new Error((j && j.detail) || `HTTP ${r.status}`);

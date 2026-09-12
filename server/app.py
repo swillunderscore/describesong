@@ -323,7 +323,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     if fields.get("year"):
         y = _facts.parse(fields["year"]); stated["year_from"], stated["year_to"] = y["year_from"] or stated["year_from"], y["year_to"] or stated["year_to"]
     if fields.get("country"):
-        c = _facts.parse(fields["country"]); stated["country"] = c["country"] or _facts.COUNTRIES.get(fields["country"].lower()) or stated["country"]
+        c = _facts.parse(fields["country"]); cc = _facts.COUNTRIES.get(fields["country"].lower()); stated["country"] = c["country"] or (frozenset([cc]) if cc else None) or _facts.REGIONS.get(fields["country"].lower()) or stated["country"]
     qv = text_embed(sound_q if len(sound_q) >= 2 else q)
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     # a stated fact filters AFTER retrieval, so retrieve deep enough that a narrow
@@ -385,11 +385,28 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         kept = sorted(zip(ids, scores), key=lambda x: (-hits.get(x[0], 0), -x[1]))
         ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
     if stated["year_from"] or stated["country"] or stated["instrumental"]:
+        # FACTS FIRST, NOT FACTS AFTER. The pool above is the 400 nearest by
+        # sound; a track the facts fit but the sound model puts 500th was never
+        # in it, and no amount of re-sorting could bring it back ("scandinavian
+        # … 2000s" had Eple outside the top 100). So every track KNOWN to fit
+        # all the stated facts joins the pool, scored exactly from the memmap.
+        # Capped: at millions of tracks "2000s" alone is too many to score.
+        conds, args = [], []
+        if stated["year_from"]: conds.append("f.year BETWEEN ? AND ?"); args += [stated["year_from"], stated["year_to"]]
+        if stated["country"]: conds.append("f.country IN (%s)" % ",".join("?" * len(stated["country"]))); args += sorted(stated["country"])
+        if stated["instrumental"]: conds.append("t.lyrics_state='instrumental'")
+        with db() as c:
+            fit = [r["id"] for r in c.execute("SELECT t.id FROM tracks t JOIN track_facts f ON f.track_id=t.id WHERE " + " AND ".join(conds) + " LIMIT 20000", args).fetchall()]
+        have = set(int(t) for t in ids); extra = [t for t in fit if t not in have and t in INDEX.pos]
+        if extra:
+            pos = np.array([INDEX.pos[t] for t in extra]); order = np.argsort(pos)
+            sc = np.asarray(INDEX.M16[pos[order]], np.float32) @ qv
+            ids = list(ids) + [extra[i] for i in order]; scores = np.concatenate([np.asarray(scores, np.float32), sc])
         # STATED FACTS: a track that contradicts one is dropped; the rest rank by how
         # many stated facts they are KNOWN to satisfy, then by sound (otherwise the
         # unidentified tracks, which can never contradict, float to the top).
         with db() as c:
-            want_script = _facts.SCRIPT_COUNTRIES.get(stated["country"] or "")
+            scripts = {_facts.SCRIPT_COUNTRIES.get(cc) for cc in (stated["country"] or ())}; want_script = scripts.pop() if len(scripts) == 1 else None   # one script for the whole region, or no hint
             tier = {}
             for r in c.execute("SELECT t.id, f.year, f.country, f.script, f.lang, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
                 ok = True; known = 0; asked = 0
@@ -404,7 +421,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                         else: demote = 1
                 if stated["country"]:
                     asked += 1
-                    if r["country"]: known += 1; ok = ok and r["country"] == stated["country"]
+                    if r["country"]: known += 1; ok = ok and r["country"] in stated["country"]
                     elif r["script"] and r["script"] != "latin" and want_script: known += 1; ok = ok and r["script"] == want_script
                     elif r["script"] and r["script"] != "latin" and not want_script: ok = False
                 if stated["instrumental"]:

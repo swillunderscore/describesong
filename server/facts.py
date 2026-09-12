@@ -7,6 +7,15 @@ DECADES = {"fifties": 1950, "sixties": 1960, "seventies": 1970, "eighties": 1980
 COUNTRIES = {"norwegian": "NO", "swedish": "SE", "danish": "DK", "finnish": "FI", "icelandic": "IS", "british": "GB", "english": "GB", "scottish": "GB", "welsh": "GB", "irish": "IE", "french": "FR", "german": "DE", "dutch": "NL", "belgian": "BE",
   "spanish": "ES", "portuguese": "PT", "italian": "IT", "brazilian": "BR", "argentinian": "AR", "mexican": "MX", "colombian": "CO", "cuban": "CU", "jamaican": "JM", "american": "US", "canadian": "CA", "australian": "AU", "japanese": "JP", "korean": "KR", "chinese": "CN",
   "indian": "IN", "nigerian": "NG", "czech": "CZ", "hungarian": "HU", "romanian": "RO", "bulgarian": "BG", "serbian": "RS", "estonian": "EE", "thai": "TH", "vietnamese": "VN", "indonesian": "ID", "filipino": "PH", "taiwanese": "TW", "saudi": "SA", "ghanaian": "GH", "south african": "ZA", "russian": "RU", "polish": "PL", "ukrainian": "UA", "turkish": "TR", "greek": "GR", "israeli": "IL", "iranian": "IR", "egyptian": "EG", "moroccan": "MA", "malian": "ML", "senegalese": "SN", "congolese": "CD", "ethiopian": "ET"}
+# A region is a set of countries. "scandinavian" was silently ignored (no
+# such single country), which put Madlib above Röyksopp for "scandinavian
+# artist … 2000s". A stated country is always a set from here on.
+REGIONS = {k: frozenset(v.split()) for k, v in {
+  "scandinavian": "NO SE DK FI IS", "scandi": "NO SE DK FI IS", "nordic": "NO SE DK FI IS", "baltic": "EE LV LT", "benelux": "NL BE LU",
+  "iberian": "ES PT", "balkan": "RS HR BA SI MK ME AL BG RO", "latin american": "BR AR MX CO CL PE UY VE CU", "latin america": "BR AR MX CO CL PE UY VE CU",
+  "east asian": "JP KR CN TW", "west african": "NG GH SN ML", "caribbean": "JM CU TT BB PR DO HT", "middle eastern": "SA EG LB IR IL TR AE JO",
+  "british isles": "GB IE"}.items()}   # no "uk"/"usa": "uk garage" is a genre, and a stated country DROPS tracks that contradict it
+
 
 def parse(q):
     """-> dict(year_from, year_to, instrumental, vocals, country) with None where the text says nothing. Also `stripped`: the query without those words."""
@@ -40,7 +49,10 @@ def parse(q):
     if re.search(r"\b(female|woman|girl|women)\b.{0,12}\b(vocal|vocals|singer|singing|voice|rapper)\b|\b(she|her) (sings|raps)\b", ql): out["vocals"] = "female"
     elif re.search(r"\b(male|man|guy|men|dude)\b.{0,12}\b(vocal|vocals|singer|singing|voice|rapper)\b|\b(he|his) (sings|raps)\b", ql): out["vocals"] = "male"
     for word, code in COUNTRIES.items():
-        if re.search(r"\b" + word + r"\b", ql): out["country"] = code; strip.append(word); break
+        if re.search(r"\b" + word + r"\b", ql): out["country"] = frozenset([code]); strip.append(word); break
+    if not out["country"]:
+        for word, codes in REGIONS.items():
+            if re.search(r"\b" + word + r"\b", ql): out["country"] = codes; strip.append(word); break
     s = ql
     for w in strip: s = s.replace(w, " ")
     out["stripped"] = re.sub(r"\s+", " ", re.sub(r"\b(from|around|about|circa|by a|by an|in the)\s*$", "", s)).strip(" ,")

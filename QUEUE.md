@@ -587,3 +587,26 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   while paused) had never been drawn → black. A frame is always drawn before
   it is trusted; a lost GL context hides the canvas and rebuilds on restore.
 - Throughput after the fix, scratch server: four known tracks in 5 s.
+
+### FIXED 2026-09-12 — "scandinavian artist lofi electronic staccato 2000s" put Madlib above Eple
+- Two causes, both measured on a copy of the live index (Eple outside the
+  top 100 before; #1 after, for that query and for "norwegian duo early
+  2000s plucky staccato beepy"):
+  1. "scandinavian" was not a word the fact parser knew (single
+     nationalities only), so only "2000s" applied. facts.REGIONS now maps
+     region words to sets of countries (scandinavian/nordic, baltic,
+     benelux, iberian, balkan, latin american, east asian, west african,
+     caribbean, middle eastern, british isles); a stated country is always
+     a set. Not "uk"/"usa": "uk garage" is a genre, and a stated country
+     DROPS tracks that contradict it.
+  2. Facts were applied AFTER retrieval, to the 400 nearest by sound. A track
+     the facts fit but the sound model ranks 500th was never in the pool.
+     Now every track KNOWN to fit all stated facts joins the pool (scored
+     exactly from the memmap, capped at 20k), then the tiering sorts.
+- Why verified tracks sit above unverified ones whenever a year or country
+  is stated: the 287 unverified tracks have no MusicBrainz identity, so no
+  year or country, so they can never be KNOWN to match. That is the design
+  (unknown ranks below known-matching, above contradicting). Open option:
+  look up unverified artists by name on MusicBrainz for a country.
+- Scan client now retries through a server restart (connection refused,
+  502/503/504) instead of marking the file failed.
