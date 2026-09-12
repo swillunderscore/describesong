@@ -300,6 +300,17 @@ search does. Plan, in order, each a bounded change with no data migration
 (the vectors are already on disk in SQLite):
   1. ~300k tracks: faiss IVF-PQ (64-byte codes) → ~100 MB RAM per 1M tracks,
      millisecond search; exact re-rank of the top 200 from the fp16 rows.
+     REQUIREMENTS (his, 2026-09-12): (a) the rebuild is AUTOMATIC and
+     event-driven — no timer, no cron: when tracks added since the last build
+     exceed 10% of the built size (min 20k), the server retrains and rebuilds
+     in a background thread at low priority and swaps the new index in
+     atomically; searches keep answering from the old one meanwhile. Nothing
+     to tend. (b) The slow second pass: after the fast approximate answer, an
+     exact scan of everything runs at low priority (only while no other search
+     is waiting) and refines the list under a small spinner — this is what
+     catches a track the clustering fits badly, independent of (a).
+     Until then: today's index is exact and updates on every insert, so there
+     is nothing to compact or rebuild.
   2. ~10M: IVF lists on disk (faiss OnDiskInvertedLists) or DiskANN — RAM
      stays ~1–2 GB regardless of size; disk ≈ 2–3 KB/track (drop moments).
   3. 100M+: the Pi's 611 GB holds ~200M at that size; RAM still ~2 GB.
