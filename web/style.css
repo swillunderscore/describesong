@@ -12,7 +12,7 @@
 body { color: var(--ink); font: 15px/1.5 var(--font); min-height: 100vh; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums }
 #wp, #water { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1 } #wp { image-rendering: auto } #water[hidden] { display: none }
 a { color: inherit }
-main { width: 100%; min-height: 100vh; margin: 0; padding: var(--gap); display: grid; gap: var(--gap); grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 520px); grid-template-areas: "top top" "res side" "foot foot" }
+main { width: 100%; min-height: 100vh; margin: 0; padding: var(--gap); display: grid; gap: var(--gap); grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 520px); grid-template-areas: "ban ban" "top top" "res side" "foot foot" }
 
 /* panels: solid tone. .a = primary tone, .b = secondary */
 .panel { border-radius: var(--r); padding: 18px 20px; background: var(--a) } .panel.b { background: var(--b) }
@@ -63,7 +63,7 @@ form.search button { font: 800 13px/1 var(--font); letter-spacing: .1em; text-tr
 .log { grid-column: 1 / -1; font-size: 11.5px; line-height: 1.6; color: var(--ink2); max-height: 200px; overflow: auto; white-space: pre-wrap; border-top: 1px solid rgb(21 21 26 / .15); padding-top: 8px }
 dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(--r); padding: 22px; max-width: 440px; font: 13.5px/1.5 var(--font) } dialog::backdrop { background: #000a }
 .foot .blk { font-size: 12px; min-height: 38px; padding: 8px 12px; color: var(--ink2) } .foot .blk a { color: var(--ink) }
-@media (max-width: 860px) { main { grid-template-columns: 1fr; grid-template-areas: "top" "res" "side" "foot" } .hit { grid-template-columns: auto 1fr } .hit .tag { grid-column: 2; justify-self: start } .hide-sm { display: none !important } }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; grid-template-areas: "ban" "top" "res" "side" "foot" } .hit { grid-template-columns: auto 1fr } .hit .tag { grid-column: 2; justify-self: start } .hide-sm { display: none !important } }
 
 /* corner settings block — the desktop's Colors / Water tabs, in miniature */
 .tc label { display: grid; grid-template-columns: 74px 1fr 40px; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2) }
@@ -96,3 +96,9 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .odo .dg .col { display: flex; flex-direction: column; transition: transform .7s cubic-bezier(.2, .8, .2, 1); will-change: transform }
 .odo .dg .col span { display: block; height: 1.3em; line-height: 1.3em; text-align: center }
 .odo .sym { width: .6em; text-align: center } .odo .gap { width: 4px }
+
+/* the one-line notice at the top: what the server is doing to itself, and why */
+.banner { grid-area: ban; border-radius: var(--ri); background: var(--ink); color: var(--a); padding: 10px 16px; font-size: 13.5px; display: flex; gap: 12px; align-items: center }
+.banner[hidden] { display: none } .banner a { color: inherit } .banner .bar { flex: 1; height: 3px; background: rgb(245 245 248 / .15); border-radius: 3px; overflow: hidden } .banner .bar i { display: block; height: 100%; background: var(--a); transition: width .8s }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid rgb(21 21 26 / .25); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px } @keyframes spin { to { transform: rotate(360deg) } }
+#more { margin-top: 8px; font-size: 12.5px; color: var(--ink2) }

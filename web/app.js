@@ -58,7 +58,22 @@ const renderStats = st => {
   lastN = n;
 };
 const es = new EventSource("/api/events");
-es.onmessage = e => { try { renderStats(JSON.parse(e.data)); } catch {} };
+let bannerTimer = null;
+function banner(html, progress) {
+  const b = $("#banner"); clearTimeout(bannerTimer);
+  if (html == null) { b.hidden = true; return; }
+  b.innerHTML = html + (progress == null ? "" : `<span class="bar"><i style="width:${Math.round(100 * progress)}%"></i></span>`); b.hidden = false;
+}
+const mmss = s => s == null ? "" : s < 60 ? `about ${Math.max(5, Math.round(s / 5) * 5)} s left` : `about ${Math.round(s / 60)} min left`;
+// A rebuild is the server reorganising the index because the collection outgrew
+// the fast exact path — i.e. the site got used. One line, then a short notice, then gone.
+function showRebuild(r) {
+  const n = (r.total || 0).toLocaleString();
+  if (r.state === "running") banner(`<b>Reorganising the index</b> — ${n} tracks outgrew the fast path. ${r.note === "training" ? "Learning the layout…" : mmss(r.eta_s)} <a href="legal.html#scale">Why?</a>`, r.total ? r.done / r.total : 0);
+  else if (r.state === "done") { banner(`<b>Index rebuilt:</b> ${n} tracks. Searches are very-nearly-exact, with a full check running after each one. <a href="legal.html#scale">What that means</a>`); bannerTimer = setTimeout(() => banner(null), 90000); }
+  else if (r.state === "failed") { banner(`<b>Index rebuild failed</b> — searching continues on the previous index. (${esc(r.note || "")})`); bannerTimer = setTimeout(() => banner(null), 60000); }
+}
+es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.rebuild) showRebuild(d.rebuild); else { renderStats(d); if (d.rebuild) showRebuild(d.rebuild); } } catch {} };
 es.onerror = () => { if (lastN === null) $("#tTracks").textContent = "offline"; };
 
 // ---- search -----------------------------------------------------------------
@@ -71,14 +86,24 @@ $("#f").addEventListener("submit", async e => {
   if (r.broad) { $("#hint").textContent = "No clear winner — that fits a lot of the music here about equally. Add an instrument, an era, or a mood."; $("#hint").hidden = false; }
   else if (r.small) { $("#hint").textContent = `Only ${r.count} track${r.count === 1 ? "" : "s"} in the database so far — confidences are rough until there are more.`; $("#hint").hidden = false; }
   if (!r.results.length) { $("#res").innerHTML = `<span class="blk">nothing in the database yet (${r.count} tracks) — add some below.</span>`; return; }
-  $("#res").innerHTML = r.results.map((t, i) => `
+  renderResults(r.results);
+  if (r.exact === false) {
+    // the index answered from candidates; now check EVERY track, at low priority
+    const more = document.createElement("div"); more.id = "more"; more.innerHTML = '<span class="spin"></span>Checking every track…'; $("#res").appendChild(more);
+    const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&exact=1").catch(() => null);
+    if (ex && ex.ok) { const rr = await ex.json(); renderResults(rr.results); const d = document.createElement("div"); d.id = "more"; d.textContent = "Checked every track."; $("#res").appendChild(d); }
+    else more.remove();                                    // 503 = the server was busy; the fast answer stands
+  }
+});
+function renderResults(results) {
+  $("#res").innerHTML = results.map((t, i) => `
     <article class="blk hit" style="--d:${i * 30}ms">
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
       <div><div class="t"><span class="n">${String(i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div></div>
       <span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>
     </article>`).join("");
-});
+}
 
 // ---- scan a folder ------------------------------------------------------------
 const worker = new Worker("worker.js", { type: "module" });

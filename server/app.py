@@ -86,29 +86,17 @@ def norm_label(*parts):
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return " ".join(s.split())
 
-# ---- the index: brute force, on purpose ------------------------------------
-#
-# 512 floats x N tracks as one matrix; a query is a single matmul. At 100k
-# tracks that is ~50 ms on the pi, at 1M ~0.5 s — and it is exact, has no
-# build step, no C++ dependency to compile on arm, and nothing to tune. hnswlib
-# is the upgrade when the matmul is the slowest thing, and not before.
-class Index:
-    def __init__(self): self.lock = threading.Lock(); self.ids = np.zeros(0, np.int64); self.M = np.zeros((0, DIM), np.float32); self.load()
-    def load(self):
-        with db() as c:
-            rows = c.execute("SELECT track_id, vec FROM vectors WHERE kind='mean'").fetchall()
-        ids = np.array([r["track_id"] for r in rows], np.int64)
-        M = np.stack([np.frombuffer(r["vec"], np.float16).astype(np.float32) for r in rows]) if rows else np.zeros((0, DIM), np.float32)
-        with self.lock: self.ids, self.M = ids, M
-    def add(self, tid, v):
-        with self.lock:
-            if tid in self.ids: self.M[np.where(self.ids == tid)[0][0]] = v
-            else: self.ids = np.append(self.ids, tid); self.M = np.vstack([self.M, v[None]])
-    def search(self, q, k=50):
-        with self.lock:
-            if len(self.ids) == 0: return [], np.zeros(0), 0.0
-            s = self.M @ q; top = np.argsort(-s)[:k]; return self.ids[top].tolist(), s[top], float(np.median(s))
-INDEX = Index()
+# ---- the index --------------------------------------------------------------
+# Exact matmul while it fits in RAM; faiss IVF-PQ with exact re-ranking beyond;
+# automatic event-driven rebuilds; a slow exact second pass. See vindex.py.
+from vindex import VectorIndex
+_subs: set = set(); _loop = None
+def _rebuild_event(ev): publish({"rebuild": ev})
+INDEX = VectorIndex(DATA, on_event=_rebuild_event)
+with db() as _c:
+    INDEX.load_from_rows(((r["track_id"], r["vec"]) for r in _c.execute("SELECT track_id, vec FROM vectors WHERE kind='mean' ORDER BY track_id")),
+                         _c.execute("SELECT COUNT(*) FROM vectors WHERE kind='mean'").fetchone()[0])
+print("vindex:", INDEX.status())
 
 # ---- text tower (the only model on the server) -----------------------------
 _text = {}
@@ -271,14 +259,23 @@ CAL_FLOOR = 0.15      # median cosine of unrelated tracks for a specific query, 
 
 # ---- /search : a sentence in, songs out ------------------------------------
 @app.get("/api/search")
-def search(q: str, request: Request, k: int = 30):
+def search(q: str, request: Request, k: int = 30, exact: int = 0):
     ratelimit(client_ip(request), 3000)
     q = q.strip()[:500]        # the text tower reads ~77 tokens anyway; no reason to tokenise a novel
     if not q: raise HTTPException(400, "empty query")
     qv = text_embed(q)
-    ids, scores, med_all = INDEX.search(qv, k=max(1, min(k, 100)))
-    n = int(len(INDEX.ids))
-    if not ids: return {"results": [], "broad": False, "small": True, "count": n}
+    n = int(INDEX.n)
+    if exact:
+        # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
+        # searching. 503 means "not now" and the page keeps the fast answer.
+        r = INDEX.exact_scan(qv, k=max(1, min(k, 100)))
+        if r is None: raise HTTPException(503, "busy")
+        ids, scores, med_all = r; is_exact = True
+    else:
+        INDEX.busy += 1
+        try: ids, scores, med_all, is_exact = INDEX.search(qv, k=max(1, min(k, 100)))
+        finally: INDEX.busy -= 1
+    if not ids: return {"results": [], "broad": False, "small": True, "count": n, "exact": True}
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
     # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
@@ -300,12 +297,14 @@ def search(q: str, request: Request, k: int = 30):
         res.append({"artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"],
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "confidence": int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
-    return {"results": res, "broad": broad, "small": small, "count": n, "gap": round(gap, 3)}
+    return {"results": res, "broad": broad, "small": small, "count": n, "gap": round(gap, 3), "exact": bool(is_exact), "mode": INDEX.mode}
 
 def stats_dict():
     with db() as c:
         t = c.execute("SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks", (time.time() - 7 * 86400,)).fetchone()
-    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "acoustid": bool(ACOUSTID_KEY)}
+    st = INDEX.status()
+    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "acoustid": bool(ACOUSTID_KEY),
+            "mode": st["mode"], "rebuild": st["build"] if st["building"] else None}
 
 @app.get("/api/stats")
 def stats(): return stats_dict()
@@ -316,14 +315,14 @@ def stats(): return stats_dict()
 # it hands the message to the event loop with call_soon_threadsafe.
 import asyncio
 from fastapi.responses import StreamingResponse
-_subs: set = set(); _loop = None
 @app.on_event("startup")
 async def _grab_loop():
     global _loop; _loop = asyncio.get_running_loop()
-def publish_stats():
+def publish(obj):
     if not _subs or _loop is None: return
-    msg = json.dumps(stats_dict())
+    msg = json.dumps(obj)
     for q in list(_subs): _loop.call_soon_threadsafe(q.put_nowait, msg)
+def publish_stats(): publish(stats_dict())
 @app.get("/api/events")
 async def events(request: Request):
     q: asyncio.Queue = asyncio.Queue(); _subs.add(q)
