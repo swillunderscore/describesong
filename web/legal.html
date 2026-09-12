@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DescribeSong — what this site stores, and what it never stores</title>
+<link rel="canonical" href="https://describesong.com/legal.html">
+<link rel="stylesheet" href="style.css">
+<style> main{grid-template-columns:1fr;grid-template-areas:"top" "res";max-width:900px;margin:0 auto} .panel h1{font-size:clamp(24px,3.5vw,36px)} .panel h2{font-size:16px;font-weight:800;margin:26px 0 8px} table{border-collapse:collapse;width:100%} td{padding:10px 8px;border-top:1px solid rgb(21 21 26 / .15);vertical-align:top;font-size:13px} td:first-child{color:var(--ink2);width:34%;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding-top:13px;font-weight:700} .box{background:var(--a1);border-radius:var(--ri);padding:12px 18px;margin:12px 0} li{margin:6px 0;font-size:13px} .mute{color:var(--ink2)} p{font-size:13px} </style></head><body><canvas id="wp"></canvas><canvas id="water" hidden></canvas><main><header class="panel b top"><a class="blk brand" href="/">DescribeSong</a></header><section class="panel" style="grid-area:res">
+<h1>What this site stores — and what it never stores</h1>
+<p class="mute">Plain English, no legalese. This is the complete list.</p>
+
+<h2>What is kept, per song</h2>
+<table>
+<tr><td>A sound description</td><td>512 numbers (about 2&nbsp;KB) produced by a machine-learning model that summarises how a track sounds — its instruments, energy, texture. It cannot be played, and it cannot be turned back into audio or lyrics. It is the same kind of thing as the fingerprint Shazam or AcoustID use, just aimed at "what does it sound like" instead of "which exact recording is this".</td></tr>
+<tr><td>Identity</td><td>Artist, title and album as text, and a <a href="https://musicbrainz.org">MusicBrainz</a> recording ID when the track could be identified.</td></tr>
+<tr><td>A fingerprint hash</td><td>A one-way hash of the track's acoustic fingerprint, used only to notice when two people add the same recording so their labels can be compared. Not the fingerprint itself.</td></tr>
+<tr><td>Track length</td><td>Seconds, to help matching.</td></tr>
+</table>
+
+<h2>What is never kept, by anyone, anywhere</h2>
+<div class="box">
+<ul>
+<li><b>Audio.</b> No file is ever uploaded. When you add music, your own browser reads the files on your computer, computes the numbers above, and sends only those. The server has no endpoint that accepts audio — it rejects anything that is not a 512-number vector of the expected shape.</li>
+<li><b>Lyrics.</b> None are stored, fetched, or transcribed.</li>
+<li><b>Cover art, file names, folder paths, or anything else from your library.</b> Tags (artist/title/album) are read from the file to label the entry and that label is all that is sent.</li>
+<li><b>Accounts, cookies, analytics, or tracking.</b> There is no sign-up and no tracking script.</li>
+<li><b>Your IP address</b>, beyond a short-lived per-address rate-limit counter that exists to stop abuse and is discarded automatically.</li>
+</ul>
+</div>
+
+<h2>How songs are identified</h2>
+<p>Your browser computes a <a href="https://acoustid.org/chromaprint">Chromaprint</a> fingerprint of the first two minutes of each file. That fingerprint is sent to this site, which looks it up in the open <a href="https://acoustid.org">AcoustID</a> database and, on a match, pulls the artist/title/album from <a href="https://musicbrainz.org">MusicBrainz</a> (open data). The site keeps a hash of the fingerprint, not the fingerprint. Tracks that AcoustID does not know are stored with the labels from your files' own tags and marked <i>unverified</i>; if someone else later adds the same recording with a different label, both are compared rather than one overwriting the other.</p>
+
+<h2>Searching</h2>
+<p>A search sends your text to this site, which turns it into the same kind of 512-number description and compares it against every stored song. Search text is not logged.</p>
+
+<h2>Licences</h2>
+<p>The database of descriptions and labels is published under the <a href="https://opendatacommons.org/licenses/odbl/">Open Database License (ODbL)</a>: anyone may use it, including commercially, as long as improvements to the database itself are shared back under the same terms. The code is <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a>. The sound model is <a href="https://github.com/LAION-AI/CLAP">LAION CLAP</a> (CC0 weights).</p>
+
+<h2>Removing something</h2>
+<p>If a label is wrong, or you want an entry removed, email <a href="mailto:swillsoftware@proton.me">swillsoftware@proton.me</a> with the artist and title. Removal deletes the vector and the label; there is nothing else to delete.</p>
+
+<h2 id="scale">How big it can get, and what the coffee buys</h2>
+<p>The whole thing runs on one Raspberry Pi. Right now every search compares your description against <b>every</b> track in the index, exactly, in a fraction of a second. That stays true up to about half a million tracks. Past that the Pi switches to the kind of index every large search engine uses: tracks are grouped by how they sound, and a search opens only the groups it could land in. Still under a second at two hundred million tracks; the trade is that it becomes very-nearly-exact instead of exact. The Pi's disk has room for that many. What more memory buys is pushing the "exact" line further out, and more searches per second when a lot of people show up at once. That's what the coffee is for.</p>
+<h2>Abuse</h2>
+<p>Requests are rate-limited per address. The database can be read only through the search box; bulk export is not offered here (it is available under the ODbL on request).</p>
+
+<p class="mute" style="margin-top:40px">Last updated 2026-09-12.</p>
+</section></main><script src="tones.js"></script><script src="water.js"></script></body></html>

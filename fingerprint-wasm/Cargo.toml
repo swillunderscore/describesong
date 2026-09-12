@@ -1,0 +1,18 @@
+[package]
+name = "fingerprint-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pure-Rust port of Chromaprint, the fingerprint AcoustID matches on. This is
+# what lets identification happen in the browser without a C++ toolchain.
+rusty-chromaprint = "0.3"
+wasm-bindgen = "0.2"
+base64 = "0.22"
+
+[profile.release]
+opt-level = "s"
+lto = true

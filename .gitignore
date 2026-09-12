@@ -1,0 +1,15 @@
+# data and models never go in the repo
+data/
+server/.venv/
+__pycache__/
+*.pyc
+mulan-trial/library/
+mulan-trial/out/
+mulan-trial/.venv*/
+mulan-trial/.conda312/
+mulan-trial/__pycache__/
+fingerprint-wasm/target/
+fingerprint-wasm/pkg-node/
+node_modules/
+*.log
+.DS_Store

@@ -1,0 +1,25 @@
+# systemd --user unit on the Pi. Foreground `docker run --rm`, so systemd owns
+# the lifetime: Restart=always brings it back after a crash or reboot.
+[Unit]
+Description=describesong (text->song search)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f describesong
+ExecStart=/usr/bin/docker run --rm --name describesong \
+  --platform linux/arm64 --security-opt seccomp=unconfined \
+  --user %U:%G --cap-drop ALL --read-only --tmpfs /tmp:size=256m \
+  --memory 1500m --memory-swap 1500m --pids-limit 256 \
+  -p 127.0.0.1:8095:8080 \
+  --env-file /mnt/nvme/describesong/env \
+  -e VIBEFIND_DATA=/data -e HF_HOME=/data/hf -e HOME=/tmp -e PYTHONPATH=/pylibs \
+  -v /mnt/nvme/describesong/src:/app:ro -v /mnt/nvme/describesong/pylibs:/pylibs:ro \
+  -v /mnt/nvme/describesong/data:/data \
+  -w /app/server python:3.12-slim python -m uvicorn app:app --host 0.0.0.0 --port 8080
+ExecStop=/usr/bin/docker stop -t 10 describesong
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,333 @@
+# describesong — queue (working name; rename is decision 3)
+
+Describe a song in plain English; get back artist / title / album of songs
+that sound like that, from a community-built database of audio embeddings.
+No audio is ever uploaded or hosted. Only identities and 2 KB vectors.
+
+## Decisions — resolved 2026-09-11
+
+1. MODEL: CLAP `larger_clap_music_and_speech` fp16, fixed windows (10 s, one
+   per ~30 s, up to 8, averaged; plus up to 4 per-moment vectors kept),
+   pinned forever, model hash stored per vector. Measured against MuQ-MuLan:
+   roughly a tie at the top, MuLan 9x the cost and 1.3 GB in-browser. See
+   the comparison section.
+2. HOSTING: the pi, in an arm64 container, behind Cloudflare Tunnel (already
+   installed there for swillearth.io; this is a second hostname on it). Main
+   PC is just another client. All vectors live on the pi.
+3. NAME / DOMAIN: still open. Not blocking the build; blocks the public URL.
+4. LICENSES: code AGPL-3.0, data ODbL. No accounts, no audio, no tracking.
+   Attribution to MusicBrainz, AcoustID, LRCLIB.
+5. ACOUSTID API KEY: still open — he registers at acoustid.org/new-application.
+   Blocks only the identify step; everything else builds around it.
+6. UNIDENTIFIABLE TRACKS: stored, unverified, with the file's tags; a
+   confirmation prompt shows a prior label to the next submitter; labels
+   normalised (case, punctuation, feat.) before counting agreement.
+7. HOMESTEAD RE-EMBED with fixed windows: later, if the mixes disappoint.
+8. LYRICS as the second signal: LRCLIB for identified tracks (server-side,
+   embedding kept, text discarded), Whisper in the browser for unidentified.
+   Plus hashed word-trigrams for exact-phrase lookup.
+9. BROAD-SEARCH DETECTION: when top results bunch with no clear winner, say
+   so and suggest adding an instrument, era or mood.
+
+## Verified (2026-09-11)
+
+- rusty-chromaprint -> WASM: 249 KB. Fed identical 11025 Hz mono PCM, it
+  matches real fpcalc 948/948 frames, 100%. Fed 44.1 kHz and left to resample
+  itself, 90% identical with ~1 bit of 32 differing — resampler only. So the
+  browser resamples to 11025 Hz mono before fingerprinting.
+- ONNX fp16 text tower (what the pi runs) vs PyTorch: cosine 1.00000,
+  11 ms/query on desktop CPU. Browser audio tower (transformers.js fp16) vs
+  PyTorch on the same 10 s window: cosine 0.99999. One space, end to end.
+- transformers.js has ClapAudioModelWithProjection and
+  ClapTextModelWithProjection for exactly Xenova/larger_clap_music_and_speech.
+- CLAP audio tower expects 48 kHz, 10 s windows, and its default truncation is
+  a RANDOM crop. Windows must be fixed and pre-cut by the client.
+- AcoustID lookup works as documented; needs a registered client key.
+- Navidrome-style streams are not involved anywhere; nothing here touches audio
+  server-side.
+
+## Retrieval test on his library (2026-09-11) — the model question REOPENED
+
+Blind descriptions, no names, rank of the intended track out of the test library:
+    SAN DIEGO VIP (dubstep)          2      Illmerica (electro house)   2
+    Consolação (solo bossa guitar)   8      Jaded (lo-fi hip hop)       8
+    a Kendrick track 8      Runnin' (90s rap instr.)   62-82
+    Song For My Father (jazz-hop)  114      Frank Ocean-ish r&b        65
+    BTSTU (falsetto lo-fi pop)     938      Khruangbin                231
+    Blue Bossa (jazz guitar duo)   294
+    Destructo – Higher: "heavy bassy dubstep 2010s" -> 67
+                        "hard electro house, bass drop, chanted hook" -> 7
+Reading: instrumental/timbral descriptions land top-10; vocal character and
+loose genre words land 60-900. CLAP is literal about sound. On a million-track
+DB these ranks scale up. MuQ-MuLan's documented gains are exactly on
+text->music retrieval, and a model swap after launch means everyone
+re-embeds — so the model should be chosen BEFORE launch by running THESE
+SAME QUERIES through MuQ-MuLan on the same library. Decision 1 is reopened
+pending that measurement.
+
+Also: "confidence" is not a 0-1 scale. Cross-modal (text vs audio) cosines
+top out around 0.5-0.65 by construction; what matters is rank and the gap to
+the next result, and that is what the UI should show.
+
+## CLAP vs MuQ-MuLan, measured (2026-09-11, RX 9060 XT, same 3 fixed windows)
+
+Rank of the intended track out of the test library, 14 blind queries:
+                          CLAP  MuLan                          CLAP  MuLan
+    SAN DIEGO VIP            4      2     Song For My Father    87    241
+    Illmerica                1      5     Frank Ocean-ish r&b  127    489
+    Consolação               1     14     BTSTU (falsetto)     701    334
+    Jaded (lo-fi)          110     48     Khruangbin           484     18
+    Kendrick                 1      9     Blue Bossa           210     66
+    Runnin'                106     25     Higher as "dubstep"   99    132
+                                          Higher as "electro"   29      3
+    median rank             93     30     Higher, vague "2012"  23     36
+    top-10                4/14   4/14     embed time          280s  2505s
+    top-50                6/14   9/14
+
+Reading: MuLan lifts the middle (median 93 -> 30) and rescues loose/vocal
+descriptions (Khruangbin 484 -> 18, Runnin' 106 -> 25) but regresses others
+(Frank Ocean 127 -> 489, Song For My Father 87 -> 241) and top-10 is identical.
+It costs 9x the compute and a 1.3 GB browser download against 143 MB.
+Both fail the same class: vocal character. That is a TEXT problem — lyrics —
+not an audio-model problem, and no audio model fixes it.
+
+Also: this deterministic-window CLAP run beats the earlier random-window CLAP
+vectors on several targets (Illmerica 2 -> 1, Kendrick 8 -> 1, Consolação
+8 -> 1). Fixed windows matter. Evidence for homestead item 162.
+
+DECISION 1 RESOLVED: CLAP fp16, fixed windows, pinned. Model hash stored per
+vector. Lyrics (LRCLIB server-side; Whisper client-side for unidentified) are
+the second signal and the one the data says to build. MuLan revisited only
+if a browser build appears and the audio signal is the bottleneck, which
+today it is not.
+
+## Plan (build order; 1 is done)
+
+1. [x] fingerprint-wasm/ — Chromaprint in the browser.
+2. [x] web/ — one page. WRITTEN, not yet run in a browser. Search bar -> /search. "Add your music" -> folder
+       picker (webkitdirectory; File System Access API where available) ->
+       Web Worker: decode (Web Audio) -> resample 11025 mono -> fingerprint ->
+       POST /identify -> resample 48 k mono -> DETERMINISTIC windows (10 s at
+       20 / 50 / 80 % of the track, mean, L2-normalise) -> CLAP audio tower
+       (transformers.js, WebGPU if present) -> POST /submit. Progress, and a
+       plain statement that nothing but IDs and vectors leave the machine.
+3. [x] server/ — FastAPI + SQLite + hnswlib/FAISS. /identify proxies AcoustID
+       (rate-limited, cached) and fetches MusicBrainz metadata once per MBID.
+       /submit validates model hash, unit norm, and consensus against other
+       submissions for the same MBID. /search embeds the query with the CLAP
+       TEXT tower (onnxruntime, CPU) and returns top-N with metadata. Index
+       rebuilt incrementally.
+4. [ ] Seed: homestead's library re-embedded THROUGH THE SAME CLIENT PATH so
+       the seed is indistinguishable from user submissions.
+5. [ ] Deploy per decision 2. Then leave it alone.
+
+## Smoke test (2026-09-11, desktop, no AcoustID key yet)
+
+Three real tracks pushed through the server by the exact protocol the browser
+uses (fixed windows, fp16-equivalent vectors, WASM fingerprint): all three
+searches returned their track at #1, confidence 100. Resubmitting the same
+file merged into the same track (dedupe by fingerprint). The second identify
+of that file returned the first submitter's label as `prior`, which is what
+drives the "someone said this is X — correct?" prompt. A vector from a
+different model was rejected with 400. Found and fixed: a 1-1 label tie was
+resolved at random; ties now keep the earlier label and a newcomer needs
+strictly more votes to take over.
+
+## Landmines
+
+- compare.py v1 decoded the entire library into RAM (the whole test library as float32 PCM)
+  and filled memory and swap on the desktop. Stream in chunks; never hold
+  more than one. The site's client must be built the same way: one file at a
+  time, PCM discarded after embedding.
+- This desktop's Python is 3.14 and PyTorch publishes no ROCm wheels for it,
+  so `pip install torch --index-url .../rocm*` fails silently and pip falls
+  back to a CUDA build that cannot see the RX 9060 XT. Use a 3.12 env (conda)
+  for ROCm.
+
+- One model variant, forever. fp16 vs fp32 vs quantized differ enough to
+  break consensus.
+- Deterministic windows, forever. Same reason.
+- Chromaprint must see 11025 Hz mono, or fingerprints drift from fpcalc's.
+
+### Landmine: WebGPU vs WASM embeddings differ (measured 2026-09-11)
+Same 10 s window, same fp16 model, same transformers.js: browser WASM = Python at
+cosine 1.00000; browser WebGPU = 0.988 (fp16 AND fp32 — it is the WebGPU kernels,
+not precision). WebGPU users agree with each other at 0.99997. Two camps, 0.988
+apart. Harmless for search (rank gaps are 0.05–0.2) and for consensus (keyed by
+fingerprint, vectors averaged). DECISION (mine, overridable): WebGPU stays default
+— 3× faster (390 ms vs 1163 ms per window). transformers.js pinned to 3.8.1 in
+worker.js so a CDN bump cannot create a third camp.
+
+### Deploy (Pi) — decided 2026-09-11
+Name: describesong (describesong.com, RDAP-available; he registers). No image
+build (32-bit dockerd + arm64 = SIGSYS): deps in /mnt/nvme/describesong/pylibs via
+deploy/pi-install.sh, stock python:3.12-slim, systemd --user unit
+deploy/describesong.service on 127.0.0.1:8095 (8090 is llama-server) (cap-drop ALL, read-only, 1.5 GB cap).
+AcoustID key: /mnt/nvme/describesong/env (600). Cloudflare: token-managed tunnel,
+so the public hostname is added in the Zero Trust dashboard (his account):
+describesong.com -> http://localhost:8095.
+
+### Client labels (added 2026-09-11)
+Unidentified files are labelled from their own tags (ID3v2.2/2.3/2.4, FLAC Vorbis
+comments) via readTags() in web/app.js; filename is the last resort. Verified on
+4 real MP3s (artist/title/album correct). FLAC parser is UNTESTED on real files —
+the test library is all MP3s, no FLACs. M4A/Ogg/Opus fall through to filename (v2).
+
+### Confidence calibration (measured 2026-09-11, the test library x 14 queries + 5 obtuse words)
+Absolute cosine is useless as confidence: "gay" scores top1 0.608, higher than
+most true hits (0.51–0.64). What separates a real description from an obtuse
+word is the top-minus-median GAP: specific queries 0.39–0.65 (median near 0),
+obtuse words 0.21–0.26 (median ~0.35: everything matches "song" equally). One
+genuine query ("dense conscious rap, urgent male vocals…") also gaps only 0.25
+in this rap-heavy library — that IS "fits a lot of music here". Constants:
+GAP_REF 0.55, BROAD_GAP 0.30, MIN_FOR_STATS 20, CAL_FLOOR 0.15. Old threshold
+(0.03) never fired for anything.
+
+### Scan speed (measured in-browser on the Pi service, 2026-09-11)
+Per track: decode 0.16 s (112 s track) – 0.31 s (214 s track); worker
+(fingerprint + 4–7 CLAP windows on WebGPU) 0.77–1.18 s. The "3 hours" I said
+earlier was a guess, not a measurement — retracted. Scan loop is now pipelined
+(next file decodes during embed; identify+submit overlap the next embed, max 4
+in flight; confirm dialogs serialised), so the embed is the only serial cost.
+Contact email: swillsoftware@proton.me (footer + legal.html).
+
+### 2026-09-11 evening — redesign + resume + concurrency
+- Design: "technicolor darkroom" — two OKLCH tones drift through hue over 240 s
+  (his desktop recolours from the wallpaper; the site recolours from the clock).
+  Fraunces + Azeret Mono, self-hosted in web/fonts (OFL; no third-party requests,
+  legal.html promises none). Ko-fi is a gradient pill in the header. Results show
+  a confidence bar per row. Shared style.css for index + legal.
+- Folder picking uses showDirectoryPicker (prompt says "view files", not
+  "upload") where it exists; <input webkitdirectory> elsewhere.
+- Resume, two layers: localStorage (name+size+mtime) AND the server: identify
+  returns known/submissions; a known+verified track skips the embed; a
+  known+unverified one offers the file's tags as a label-only vote (submit with
+  mean=null). Worker split into fingerprint / embed / drop so identify sits
+  between them; stage A (decode+fp+identify) runs one file ahead of the GPU.
+- Concurrency: per-request SQLite connections in WAL; 2 users x 40 overlapping
+  submits on 20 shared recordings → 80 ok, 0 errors, 60 rows, 0.2 s. The real
+  shared limit is AcoustID's 3 lookups/s per key → server-side token bucket,
+  waits up to 6 s then falls back to tags (unverified) instead of failing.
+- Server changes are LOCAL until his first scan finishes (restart would fail
+  his in-flight requests); static files are live.
+
+### Design, take 3 (2026-09-11, after "solid colors man")
+His reference is the Homestead web app: SOLID tone panels (p/s pair), nested
+rows a lighter tint of the same tone, dark ink everywhere, wallpaper only in
+the gaps. Site now: header/side/footer = tone B, main = tone A, nested blocks
+= color-mix(tone, white 22%), ink #15151a, rings for numbers, JetBrains Mono
+(the bar's font). tones.js drifts the pair through hue (1.5°/s, phase from the
+clock so every visitor sees the same pair) and paints the two deep tones as a
+Bayer-dithered pixel sky on a fixed canvas — visible only in the gaps. body
+background must stay transparent (an in-flow body background paints ABOVE a
+z-index:-1 canvas; that was the "flat dark" bug). Takes 1 (serif/gradient) and
+2 (glass/dark) were rejected as generic-AI — do not go back to them.
+
+### 2026-09-11 late — width, font, water, sliders
+- Layout is fluid (main fills the window, side column clamp(340px,27vw,520px)).
+- Font is the visitor's system UI font (system-ui stack) — no bundled font.
+- The site TITLE is the "describesong" wordmark block in the header (big,
+  .brand); the h1 is the instruction and stays moderate. (He corrected me.)
+- water.js: WebGL2 wave equation (RG16F ping-pong, viscosity term), refraction
+  with dispersion + caustics of the pixel sky, drops from the pointer + light
+  rain. Tiers off/low/mid/high (sim at 1/8, 1/4, 1/2 res). Auto tier measured
+  on load (mean rAF interval vs display period over ~110 frames; 7.0 ms here →
+  mid). PAUSED whenever a scan runs (root[data-scanning]) — CLAP gets the GPU.
+- Corner block "🎨 colors": hue / sat / bright / water sliders, persisted in
+  localStorage; ink flips to light below the desktop's luminance threshold.
+
+### 2026-09-11 night — hyprwater ported (water.js v2)
+Read from ~/.config/hypr/hyprwater/src (Shaders.hpp, GlassRenderer.cpp) and
+ported: wavesim.frag verbatim (9-point Laplacian, viscosity l−lp, uneven bed,
+sponge, soft clamp, DoG round taps + dipole strokes, chunked ambient impulses
+in the 0.29–0.38 ring, seaEnergy tame), his time model (sim = real × speed,
+1/120 s steps, SUB 1/2/4, interpolation between the two states), viscosity →
+max-speed root (K 0.78), damping 0.9994, waveSpeed √depth, the band-limited
+smooth copy (two 2x blits + gaussian σ = clamp(95√causticK, 3, 24)) for the
+warp with the p=4 soft limiter, causticsplat.vert/frag forward splat + blur
+r = clamp(lensK·30, 2.1, 12), the additive caustic branch, absorption + murk,
+mouse wake (0.014 s sampling, stroke push at 0.009, cap 0.012·mouse) and click
+tap. Defaults = his hyprwater-tuning.conf values. Sliders: quality (auto/off/
+low/mid/high → sim 384/640/1024), brightness, depth, speed (log), activity,
+viscosity, water colour, murk, mouse wake, scale; all persisted.
+NOT ported (say so if asked): Stable-Fluids currents (the 4 fluid passes and
+velocity advection), window physics / layers (no windows on a web page),
+light_from_backdrop branch, lens/fresnel/specular/blur of the glass windows
+(the site has no glass windows; the water is the whole backdrop).
+Verified: no GL errors, mid tier at 7.0 ms/frame; at speed 1.0 the caustic
+veins and warp are unmistakably hyprwater; at his 0.019 it is a near-still
+pool, as on his desktop.
+Colours box: header toggles (was un-closable); "Hue shifts over time" checkbox,
+off → the hue slider is the static colour. Random example placeholder per load.
+All copy sentence case; wordmark "Describesong".
+
+### 2026-09-11 late night — app layout, bar-mounted settings, repo
+- main is min-height 100vh with rows auto/1fr/auto: the sidebar stretches to
+  the bottom (support block pinned at its foot: "No ads. No tracking." + Ko-fi),
+  the bottom bar is always at the bottom. No empty wallpaper below content.
+- Water/sky stay FIXED behind the page while content scrolls — the desktop rule
+  ("a moving window slides across standing water"). No infinite water; the
+  results are capped at 30 so the page is never long anyway.
+- Colours & water box is a block IN the bottom bar; opens upward; click
+  outside closes it. Water freezes on hidden tab, window blur, or a scan.
+- His slider values live in HIS browser's localStorage — never reset them
+  again from a test tab (a depth reset to 3.69 may have clobbered his choice).
+- Repo: git initialised, AGPL-3.0 LICENSE, README, .gitignore (data, models,
+  library, venvs, wasm build dirs). Footer links github.com/swillunderscore/
+  describesong — HE creates the repo (publishing is his action):
+    gh repo create swillunderscore/describesong --public --source ~/describesong --push
+- Ads: none; recommendation stays no ads (the support block is the gesture).
+
+### LIVE — 2026-09-11 (night)
+describesong.com (+ www) → Cloudflare tunnel "raspberry-pi" → HTTP localhost:8095
+on the Pi, as a "published application route" (the new dashboard name for
+public hostnames; "Hostname routes" is the WARP/private thing and stays empty).
+Cloudflare terminates TLS; the tunnel to the Pi is its own encrypted link; the
+service is plain HTTP on localhost, like swillearth's nginx on :80. No nginx
+needed here: one process serves page + API, and no COOP/COEP.
+Verified from outside: index, wasm (application/wasm), worker, legal all 200;
+search through the tunnel (#1 Wolfgang Gartner 92%); the rate limiter records
+the real client IP (CF-Connecting-IP), not the tunnel's.
+Repo public: github.com/swillunderscore/describesong (he created it; I push).
+Gotcha: a resolver that looked the name up BEFORE the record existed caches
+the miss for a while (his PC's systemd-resolved did) — resolvectl flush-caches.
+
+### Scaling the search index (decision, 2026-09-12)
+Today: means as float32 in RAM, brute force (M @ q). Fine to ~500k tracks
+(2 KB/track, container cap 1.5 GB, ~0.2 s/search). The "400 GB RAM for every
+song ever" figure is ONLY for that naive layout — it is not what large vector
+search does. Plan, in order, each a bounded change with no data migration
+(the vectors are already on disk in SQLite):
+  1. ~300k tracks: faiss IVF-PQ (64-byte codes) → ~100 MB RAM per 1M tracks,
+     millisecond search; exact re-rank of the top 200 from the fp16 rows.
+  2. ~10M: IVF lists on disk (faiss OnDiskInvertedLists) or DiskANN — RAM
+     stays ~1–2 GB regardless of size; disk ≈ 2–3 KB/track (drop moments).
+  3. 100M+: the Pi's 611 GB holds ~200M at that size; RAM still ~2 GB.
+Key-lookup databases (his earth game's trillions of rows) don't apply: they
+find rows BY KEY via a B-tree. Similarity search has no key — every query must
+compare against everything, so it needs the special indexes above.
+SEO 2026-09-12: title with the query phrase, meta description, canonical, OG/
+twitter cards, favicon, robots.txt, sitemap.xml. What actually ranks a
+brand-new domain is links (r/tipofmytongue etc.) — his move.
+
+### 2026-09-12 — asks
+- Colours box lives in the HEADER now (opens downward), called "Colors";
+  Ko-fi block says "Make it faster →". Sidebar links legal.html#scale, which
+  tells the scale story honestly ("exact to ~500k, very-nearly-exact after,
+  under a second at 200M; memory pushes the exact line out") — kept OFF the
+  front page so nobody reads a limit into a 600-track index.
+- FUTURE (with the approximate index, step 1 of the scaling plan): answer fast
+  from the index, then keep an exact re-scan running in the background at low
+  priority (only while no other search is waiting), refining the list in place
+  under a small spinner. Not built; nothing to build until ~300k tracks.
+- Boot: describesong is a systemd --user unit, enabled, Restart=always,
+  linger on; docker and cloudflared are system services. Verified below.
+
+### Scrub (2026-09-12)
+Public repo scanned for identifiers. Found and removed: the Pi's user@LAN
+address as sync.sh's default (now PI= must be given), and 35 "/home/<user>/"
+cargo-registry paths in the wasm's panic strings (byte-patched to
+"/home/user/", same length — code sections and fingerprints proven identical;
+a full rebuild produced different code sections, so it was NOT used). The
+only email is the project address on purpose. Old commits still hold the old
+strings until he squashes history (his force-push).

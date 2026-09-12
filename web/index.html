@@ -1,0 +1,90 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DescribeSong — find a song by describing it</title>
+<meta name="description" content="Describe a song in plain words — instruments, mood, tempo, era, where you heard it — and get its name. A community index of how songs sound. No audio is ever uploaded.">
+<link rel="canonical" href="https://describesong.com/">
+<meta property="og:type" content="website"><meta property="og:site_name" content="DescribeSong"><meta property="og:url" content="https://describesong.com/">
+<meta property="og:title" content="DescribeSong — find a song by describing it">
+<meta property="og:description" content="Describe it. Instruments, mood, tempo, era — anything but the name. Free, no ads, no accounts, and your files never leave your computer.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232982a4'/%3E%3Crect x='6' y='6' width='52' height='52' rx='10' fill='%23a48929'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%2315151a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head><body>
+<canvas id="wp"></canvas><canvas id="water" hidden></canvas>
+<main>
+  <header class="panel b top">
+    <a class="blk brand" href="/">DescribeSong</a>
+    <span class="blk hide-sm"><span class="odo" id="odoTracks"></span><span><span class="k">Tracks in the index</span><br><span class="v" id="tTracks">loading</span></span></span>
+    <span class="blk hide-sm"><span class="odo" id="odoWeek"></span><span><span class="k">Added</span><br><span class="v">this week</span></span></span>
+<div id="tc" class="tc push" title="Colors">
+  <div class="tch" aria-label="Settings" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span id="tcx" hidden>▾</span></div>
+  <div id="tcbody">
+  <label class="chk"><input id="tcDrift" type="checkbox"> <span>Hue shift</span></label>
+  <label>Hue <input id="tcH" type="range" min="0" max="360" step="1"><output id="tcHo"></output></label>
+  <label>Saturation <input id="tcS" type="range" min="0" max="200" step="1"><output id="tcSo"></output></label>
+  <label>Brightness <input id="tcV" type="range" min="30" max="100" step="1"><output id="tcVo"></output></label>
+  <label class="chk"><input id="w_enabled" type="checkbox"> <span>Water</span></label>
+  <label>Quality <input id="w_quality" type="range" min="-1" max="3" step="1"><output></output></label>
+  <span class="k2" id="tcNote"></span>
+  <button type="button" id="tcMore" class="ghost">I like settings</button>
+  <div id="tcMoreBody" hidden>
+    <div class="tsub">Water <span class="k2">(hyprwater)</span></div>
+    <label>Brightness <input id="w_intensity" type="range" min="0" max="1.5" step="0.01"><output></output></label>
+    <label>Depth <input id="w_depth" type="range" min="0.5" max="10" step="0.05"><output></output></label>
+    <label>Speed <input id="w_speed" type="range" min="0" max="100" step="1"><output></output></label>
+    <label>Activity <input id="w_agitation" type="range" min="0" max="1" step="0.01"><output></output></label>
+    <label>Viscosity <input id="w_viscosity" type="range" min="0" max="1" step="0.01"><output></output></label>
+    <label>Water color <input id="w_absorption" type="range" min="0" max="1" step="0.01"><output></output></label>
+    <label>Murk <input id="w_murk" type="range" min="0" max="1" step="0.01"><output></output></label>
+    <label>Mouse wake <input id="w_mouse" type="range" min="0" max="1" step="0.01"><output></output></label>
+    <label>Scale <input id="w_scale" type="range" min="0.5" max="6" step="0.1"><output></output></label>
+    <button type="button" id="tcReset" class="ghost">Back to the defaults</button>
+  </div>
+  </div>
+</div>
+    <a class="blk alt" href="https://ko-fi.com/swillsoftware" target="_blank" rel="noopener"><span><span class="k">Runs on a Raspberry Pi</span><br><span class="v">Make it faster →</span></span></a>
+  </header>
+
+  <div class="resarea">
+    <section class="panel">
+      <h1>Describe a song.<br>Get its <span>name.</span></h1>
+      <p class="lead">Instruments, mood, tempo, era, where you heard it — anything but the name.</p>
+      <form id="f" class="search"><input id="q" type="text" placeholder="" autofocus autocomplete="off"><button>Search</button></form>
+      <div id="hint" class="hint" hidden></div>
+      <div id="res"></div>
+    </section>
+  </div>
+
+  <aside class="panel b side">
+    <h2>Add your music<br>to the <span>index</span></h2>
+    <p><b>Nothing is uploaded.</b> Your browser reads the files right here on your computer, identifies each one by fingerprint, and boils it down to a 2&nbsp;KB list of numbers describing how it sounds. Only those numbers and the artist / title / album text are sent. The site has no way to receive audio at all.</p>
+    <input id="folder" type="file" webkitdirectory multiple hidden>
+    <button id="pick" class="scan">Scan a music folder<small>Files stay on this computer · about 1.5 s per track on a GPU</small></button>
+    <ul class="facts">
+      <li><b>Leave the tab open.</b> Other tabs are fine; closing this one stops the scan.</li>
+      <li><b>Pick up where you left off.</b> Finished tracks are kept and skipped next time — in any browser.</li>
+      <li><b>Wrong folder?</b> Non-audio files are ignored, and there's a Stop button.</li>
+      <li><b>Obscure stuff welcome.</b> Tracks the fingerprint database doesn't know are kept with your tags.</li>
+    </ul>
+    <div id="prog" hidden><span class="ring big" id="rScan" style="--p:0"><span id="nScan">0%</span></span><div id="status"></div><progress id="bar" value="0" max="1"></progress>
+      <button id="stop" class="ghost" hidden>Stop</button>
+      <div id="log" class="log"></div></div>
+    <div class="support">
+      <span class="blk"><b>No ads. No tracking. No accounts.</b><span class="k2"><a href="legal.html">What the server keeps, and what it never sees →</a><br><a href="legal.html#scale">How big it can get, and what the coffee buys →</a></span></span>
+    </div>
+  </aside>
+
+  <dialog id="confirm"><p id="confirmText"></p><div style="display:flex;gap:8px;justify-content:flex-end"><button id="cNo" class="ghost">Use my label</button><button id="cYes" class="ghost">Use existing label</button></div></dialog>
+
+  <footer class="panel b foot">
+    <span class="blk"><a href="legal.html">What this site stores — and never stores</a></span>
+    <span class="blk">Vectors&nbsp;<a href="https://opendatacommons.org/licenses/odbl/">ODbL</a>&nbsp;· code AGPL‑3.0&nbsp;· model&nbsp;<a href="https://github.com/LAION-AI/CLAP">LAION CLAP</a></span>
+    <span class="blk">IDs by&nbsp;<a href="https://acoustid.org">AcoustID</a>&nbsp;+&nbsp;<a href="https://musicbrainz.org">MusicBrainz</a></span>
+    <span class="blk"><a href="mailto:swillsoftware@proton.me">swillsoftware@proton.me</a></span>
+    <span class="blk">Source&nbsp;<a href="https://github.com/swillunderscore/describesong">github.com/swillunderscore/describesong</a></span>
+  </footer>
+</main>
+
+<script src="tones.js"></script>
+<script src="water.js"></script>
+<script type="module" src="app.js"></script>
+</body></html>
