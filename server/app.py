@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS vectors(    -- mean vector + up to 4 moments, all uni
   PRIMARY KEY(track_id, kind, pos)
 );
 CREATE TABLE IF NOT EXISTS ratelimit(ip TEXT PRIMARY KEY, window REAL, n INTEGER);
+
+CREATE TABLE IF NOT EXISTS lyric_grams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
+CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(artist, title, album, content='');
 """
 with db() as c: c.executescript(SCHEMA)
 
@@ -85,6 +88,14 @@ def norm_label(*parts):
     s = re.sub(r"\((feat|ft|featuring)[^)]*\)|\[[^\]]*\]|\b(official|video|audio|remaster(ed)?|lyrics)\b", " ", s)
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return " ".join(s.split())
+
+with db() as _c:
+    if "lyrics_state" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
+        _c.execute("ALTER TABLE tracks ADD COLUMN lyrics_state TEXT DEFAULT 'none'")
+    # names index: rebuild from tracks (contentless FTS holds no text of its own)
+    if _c.execute("SELECT COUNT(*) FROM tracks_fts").fetchone()[0] != _c.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]:
+        _c.execute("DELETE FROM tracks_fts")
+        _c.executemany("INSERT INTO tracks_fts(rowid, artist, title, album) VALUES(?,?,?,?)", _c.execute("SELECT id, artist, title, album FROM tracks").fetchall())
 
 # ---- the index --------------------------------------------------------------
 # Exact matmul while it fits in RAM; faiss IVF-PQ with exact re-ranking beyond;
@@ -249,6 +260,10 @@ def submit(body: SubmitIn, request: Request):
         for i, m in enumerate(moments):
             c.execute("INSERT OR REPLACE INTO vectors VALUES(?,?,?,?)", (tid, "moment", i, m.astype(np.float16).tobytes()))
     INDEX.add(tid, mean)
+    with db() as c:
+        r = c.execute("SELECT artist, title, album FROM tracks WHERE id=?", (tid,)).fetchone()
+        c.execute("INSERT OR REPLACE INTO tracks_fts(rowid, artist, title, album) VALUES(?,?,?,?)", (tid, r["artist"], r["title"], r["album"]))
+    queue_lyrics(tid)
     if new_track: publish_stats()
     return {"ok": True, "track_id": tid}
 
@@ -276,7 +291,18 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         try: ids, scores, med_all, is_exact = INDEX.search(qv, k=want)
         finally: INDEX.busy -= 1
     if not ids: return {"results": [], "broad": False, "small": True, "count": n, "exact": True}
-    top_all = float(scores[0]); ids, scores = list(ids)[offset:offset + k], np.asarray(scores)[offset:offset + k]   # the page asked for
+    top_all = float(scores[0])
+    # WORDS FIRST. Three words in a row from the lyrics, or every word of the
+    # query in the name, is an exact kind of evidence the sound model cannot
+    # give. Those tracks lead (only on the first page), marked with how.
+    via = {}
+    if offset == 0:
+        for t, frac in lyric_hits(q):
+            if frac >= 0.34 or (frac > 0 and len(_lyr.norm_words(q)) <= 5): via.setdefault(t, ("lyrics", frac))
+        for t, _ in name_hits(q): via.setdefault(t, ("name", 1.0))
+    lead = [t for t, _ in sorted(via.items(), key=lambda kv: -kv[1][1])]
+    merged = [(t, top_all) for t in lead] + [(t, float(sc)) for t, sc in zip(ids, scores) if t not in via]
+    ids = [t for t, _ in merged][offset:offset + k]; scores = np.array([sc for _, sc in merged][offset:offset + k], np.float32)   # the page asked for
     if not len(ids): return {"results": [], "broad": False, "small": n < MIN_FOR_STATS, "count": n, "exact": bool(is_exact), "mode": INDEX.mode}
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
@@ -296,9 +322,11 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     for tid, s in zip(ids, scores):
         r = rows.get(tid)
         if not r: continue
+        v = via.get(tid)
         res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"],
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
-                    "confidence": int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
+                    "via": v[0] if v else "sound",
+                    "confidence": (100 if v[1] >= 0.99 else max(60, int(round(100 * v[1])))) if v else int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
     return {"results": res, "broad": broad, "small": small, "count": n, "gap": round(gap, 3), "exact": bool(is_exact), "mode": INDEX.mode}
 
 # ---- what the index hears ---------------------------------------------------
@@ -333,11 +361,46 @@ def describe(tid: int, request: Request):
         if len(out) >= 12: break
     return {"id": tid, "tags": out}
 
+# ---- lyrics: hashed trigrams from LRCLIB, text discarded (see lyrics.py) ----
+import lyrics as _lyr
+def _store_lyrics(tid, state, g):
+    with db() as c:
+        c.execute("DELETE FROM lyric_grams WHERE track_id=?", (tid,))
+        if g: c.executemany("INSERT OR IGNORE INTO lyric_grams(track_id, gram) VALUES(?,?)", [(tid, x) for x in g])
+        c.execute("UPDATE tracks SET lyrics_state=? WHERE id=?", (state, tid))
+LYRICS = _lyr.LyricsWorker(_store_lyrics)
+def queue_lyrics(tid):
+    with db() as c:
+        r = c.execute("SELECT artist, title, album, duration, lyrics_state FROM tracks WHERE id=?", (tid,)).fetchone()
+    if r and r["lyrics_state"] == "none": LYRICS.enqueue(tid, r["artist"], r["title"], r["album"], r["duration"])
+with db() as _c:   # catch-up: everything that has never been looked up
+    for r in _c.execute("SELECT id, artist, title, album, duration FROM tracks WHERE lyrics_state='none' AND artist IS NOT NULL AND title IS NOT NULL").fetchall():
+        LYRICS.enqueue(r["id"], r["artist"], r["title"], r["album"], r["duration"])
+print("lyrics: queued", LYRICS.q.qsize())
+
+def lyric_hits(q, limit=30):
+    """tracks sharing hashed trigrams with the query -> [(track_id, fraction of query grams matched)]"""
+    g = list(_lyr.grams(_lyr.norm_words(q)))
+    if not g: return []
+    with db() as c:
+        rows = c.execute("SELECT track_id, COUNT(*) n FROM lyric_grams WHERE gram IN (%s) GROUP BY track_id ORDER BY n DESC LIMIT ?" % ",".join("?" * len(g)), (*g, limit)).fetchall()
+    return [(r["track_id"], r["n"] / len(g)) for r in rows]
+
+def name_hits(q, limit=10):
+    """every query word (3+ letters) present in artist/title/album -> [(track_id, rank)]"""
+    toks = [t for t in re.findall(r"[a-z0-9]+", q.lower()) if len(t) >= 3]
+    if not toks: return []
+    with db() as c:
+        try: rows = c.execute("SELECT rowid, bm25(tracks_fts) r FROM tracks_fts WHERE tracks_fts MATCH ? ORDER BY r LIMIT ?", (" ".join('"%s"' % t for t in toks), limit)).fetchall()
+        except Exception: return []
+    return [(r["rowid"], float(r["r"])) for r in rows]
+
 def stats_dict():
     with db() as c:
         t = c.execute("SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks", (time.time() - 7 * 86400,)).fetchone()
     st = INDEX.status()
-    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "acoustid": bool(ACOUSTID_KEY),
+    with db() as c: ly = c.execute("SELECT SUM(lyrics_state='found') f, SUM(lyrics_state='none') p FROM tracks").fetchone()
+    return {"tracks": t["n"], "verified": t["v"] or 0, "week": t["w"] or 0, "model": MODEL_ID, "acoustid": bool(ACOUSTID_KEY), "lyrics": ly["f"] or 0, "lyrics_pending": ly["p"] or 0,
             "mode": st["mode"], "rebuild": st["build"] if st["building"] else None}
 
 @app.get("/api/stats")

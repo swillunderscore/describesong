@@ -108,3 +108,6 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center } .tags[hidden] { display: none }
 .chip { font-size: 12px; font-weight: 600; background: var(--ink); color: var(--a); border-radius: 8px; padding: 5px 9px } .chip small { opacity: .6; font-weight: 500; margin-left: 4px }
 .chipnote { font-size: 11.5px; color: var(--ink2); flex-basis: 100% }
+
+.tagcol { display: flex; flex-direction: column; gap: 6px; align-items: flex-end }
+.tag.via { background: var(--b); color: var(--ink); }

@@ -388,3 +388,24 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   cgroup_memory=1` in /boot/firmware/cmdline.txt + reboot — his call. Memory
   today: ~0.5 GB resident + 64 MB per million tracks of codes; the vectors
   themselves live in page cache.
+
+### BUILT 2026-09-12 — words first (decision 8 delivered), names search
+- lyrics.py: for every track with artist+title the Pi asks LRCLIB (free, no
+  key, UA identifies us) for lyrics, picks the result nearest in duration
+  (±12 s), hashes word-TRIGRAMS (sha1 → 63-bit ints), stores the hashes in
+  lyric_grams, discards the text. tracks.lyrics_state: none/found/missing/
+  instrumental. One worker thread, 4 req/s, fed by submits + a startup
+  catch-up of every 'none'. legal.html updated (word hashes are listed as a
+  thing kept; lyrics text is not).
+- tracks_fts (FTS5, contentless) over artist/title/album, rebuilt when counts
+  drift; a name match requires EVERY query word of 3+ letters.
+- Search: on page 1, lyric matches (≥34% of the query's trigrams, or any hit
+  for ≤5-word queries) and name matches LEAD, marked via="lyrics"/"name"
+  (badges "matched the words" / "matched the name"); the sound ranking
+  follows. Measured locally on 6 real tracks: LRCLIB found 3/6; 4-word runs
+  from real lyrics find their track — see the test line below.
+- MuLan record, corrected: the earlier test measured MuQ-MuLan median rank 30
+  vs CLAP 93 and top-50 9/14 vs 6/14 (top-10 tied 4/14). I framed that as a
+  tie and leaned on the cost (9× compute, 1.3 GB download); it was not a tie.
+  He is right. Decision on MuLan is his; it would mean an ONNX export, a
+  re-scan of every track, and desktop-only scanning.

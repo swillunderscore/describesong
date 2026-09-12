@@ -123,7 +123,7 @@ function rowHtml(t, i, start) {
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div>
         <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
-      <span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>
+      <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span></span>
     </article>`;
 }
 function appendResults(results, start) {
