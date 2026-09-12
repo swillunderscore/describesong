@@ -342,3 +342,13 @@ cargo-registry paths in the wasm's panic strings (byte-patched to
 a full rebuild produced different code sections, so it was NOT used). The
 only email is the project address on purpose. Old commits still hold the old
 strings until he squashes history (his force-push).
+
+### Rebuild banner (spec, 2026-09-12 — build with scaling step 1)
+When a rebuild runs, the page shows one line at the top, pushed over the
+existing /api/events stream (no polling): what is happening, why, and a
+finish estimate from the measured rate ("Reorganising the index — 1.2M tracks
+outgrew the fast path. About 4 min left."). When it finishes the line becomes
+a short notice for a while ("Index rebuilt: 1.2M tracks. Searches are exact
+again for now.") and then goes away. Concise; no jargon; nothing modal. Both
+messages may carry the one honest link to legal.html#scale — a rebuild means
+the site got popular and the Pi is at its limit, which is the coffee case.
