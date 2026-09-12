@@ -335,7 +335,7 @@ CAL_FLOOR = 0.15      # median cosine of unrelated tracks for a specific query, 
 
 # ---- /search : a sentence in, songs out ------------------------------------
 @app.get("/api/search")
-def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 0):
+def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 0, sound_only: int = 0):
     ratelimit(client_ip(request), 3000)
     q = q.strip()[:500]        # the text tower reads ~77 tokens anyway; no reason to tokenise a novel
     if not q: raise HTTPException(400, "empty query")
@@ -355,6 +355,11 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     # a stated fact filters AFTER retrieval, so retrieve deep enough that a narrow
     # filter still leaves pages of results ("nineties rap" out of 8 candidates left 3)
+    if sound_only:
+        # "nothing is written down about this song": rank by sound alone. Facts and
+        # names are dropped, so a well-documented track cannot outrank an obscure
+        # one on paperwork it happens to have.
+        free = q; stated = {"year_from": None, "year_to": None, "instrumental": None, "vocals": None, "country": None, "stripped": q}; fields = {"free": q}
     if stated["year_from"] or stated["country"] or stated["instrumental"] or any(re.search(r"(?<![\w])" + re.escape(w) + r"(?![\w])", free.lower()) for w in EVENT_WORDS): want = max(want, 400)
     if exact:
         # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
@@ -374,7 +379,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     via = {}; quoted_miss = False
     phrases = re.findall(r'"([^"]{2,120})"|“([^”]{2,120})”', free); phrases = [a or b for a, b in phrases]
     if fields.get("lyrics"): phrases.append(fields["lyrics"])
-    if offset == 0 and any(fields.get(f) for f in ("artist", "title", "album")):
+    if offset == 0 and not sound_only and any(fields.get(f) for f in ("artist", "title", "album")):
         with db() as c:
             cond = " AND ".join("%s:%s" % (f, " ".join('"%s"' % t for t in re.findall(r"[^\s\"]+", fields[f]))) for f in ("artist", "title", "album") if fields.get(f))
             try:
@@ -386,7 +391,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                     for r in c.execute("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ? ORDER BY bm25(tracks_fts) LIMIT 100", (anycond,)).fetchall(): via.setdefault(r["rowid"], ("name", 1.0))
             except Exception: pass
         if not via: quoted_miss = quoted_miss or True
-    if offset == 0 and phrases:
+    if offset == 0 and not sound_only and phrases:
         # QUOTES INSIST: only tracks whose lyrics contain every quoted phrase,
         # ordered by how the rest of the sentence sounds (or by name if nothing else was said)
         qh = quoted_hits(phrases)
@@ -462,7 +467,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                 if ok: tier[r["id"]] = known - demote          # known matches count up; a contradicting year counts down
         kept = sorted(((t, sc) for t, sc in zip(ids, scores) if t in tier), key=lambda x: (-tier[x[0]], -x[1]))
         if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
-    if offset == 0 and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):
+    if offset == 0 and not sound_only and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):
         for t, frac in lyric_hits(q):
             if frac >= 0.34 or (frac > 0 and len(_lyr.norm_words(q)) <= 5): via.setdefault(t, ("lyrics", frac))
         for t, _ in name_hits(free): via.setdefault(t, ("name", 1.0))

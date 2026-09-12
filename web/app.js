@@ -98,8 +98,9 @@ $("#f").addEventListener("submit", async e => {
   e.preventDefault();
   const q = $("#q").value.trim(); if (!q) return;
   $("#res").innerHTML = '<span class="blk">searching…</span>'; $("#hint").hidden = true;
-  const mine = ++seqNo; cur = { q, exact: false, offset: 0, done: false, seq: mine };
-  const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE).then(r => r.json()).catch(() => null);
+  const so = $("#soundOnly") && $("#soundOnly").checked ? "&sound_only=1" : "";
+  const mine = ++seqNo; cur = { q, exact: false, offset: 0, done: false, seq: mine, so };
+  const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE + so).then(r => r.json()).catch(() => null);
   if (mine !== seqNo) return;
   if (!r) { $("#res").innerHTML = '<span class="blk b">server unreachable</span>'; return; }
   if (r.quoted_miss) { $("#hint").textContent = "No song in the index has those quoted words in its lyrics. Showing the closest sounds instead."; $("#hint").hidden = false; }
@@ -110,7 +111,7 @@ $("#f").addEventListener("submit", async e => {
   if (r.exact === false) {
     // the index answered from candidates; now check EVERY track, at low priority
     const more = document.createElement("div"); more.id = "more"; more.innerHTML = '<span class="spin"></span>Checking every track…'; $("#res").appendChild(more);
-    const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE + "&exact=1").catch(() => null);
+    const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE + "&exact=1" + so).catch(() => null);
     if (mine !== seqNo) return;
     if (ex && ex.ok) { const rr = await ex.json(); more.remove(); swapResults(rr.results); cur.exact = true; cur.offset = rr.results.length; cur.done = rr.results.length < PAGE; sentinel();
       const d = document.createElement("div"); d.id = "more"; d.textContent = "Checked every track."; $("#res").appendChild(d); }
@@ -120,7 +121,7 @@ $("#f").addEventListener("submit", async e => {
 const io = new IntersectionObserver(async ents => {
   if (!ents.some(x => x.isIntersecting) || !cur || cur.done || cur.loading) return;
   cur.loading = true; const mine = cur.seq;
-  const r = await fetch(`/api/search?q=${encodeURIComponent(cur.q)}&k=${PAGE}&offset=${cur.offset}${cur.exact ? "&exact=1" : ""}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  const r = await fetch(`/api/search?q=${encodeURIComponent(cur.q)}&k=${PAGE}&offset=${cur.offset}${cur.exact ? "&exact=1" : ""}${cur.so || ""}`).then(r => r.ok ? r.json() : null).catch(() => null);
   if (!cur || mine !== cur.seq) return;
   cur.loading = false;
   if (!r || !r.results.length) { cur.done = true; sentinel(); return; }
