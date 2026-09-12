@@ -1,3 +1,10 @@
+# THE EAR. VIBEFIND_MODEL is clap or mulan. Switching is one word and a
+# restart; nothing is deleted either way, because vectors carry the model they
+# came from and each ear keeps its own index files. After switching, every
+# track without a vector in the new space is re-embedded by the next browser
+# that scans it (identify reports has_vector). See QUEUE.md for the numbers.
+# To switch: change `clap` to `mulan` on the VIBEFIND_MODEL line below, then
+#   systemctl --user daemon-reload && systemctl --user restart describesong
 # systemd --user unit on the Pi. Foreground `docker run --rm`, so systemd owns
 # the lifetime: Restart=always brings it back after a crash or reboot.
 [Unit]
@@ -16,6 +23,7 @@ ExecStart=/usr/bin/docker run --rm --name describesong \
   -e VIBEFIND_DATA=/data -e HF_HOME=/data/hf -e HOME=/tmp -e PYTHONPATH=/pylibs \
   -v /mnt/nvme/describesong/src:/app:ro -v /mnt/nvme/describesong/pylibs:/pylibs:ro \
   -v /mnt/nvme/describesong/data:/data \
+  -e VIBEFIND_MODEL=clap \
   -w /app/server python:3.12-slim python -m uvicorn app:app --host 0.0.0.0 --port 8080
 ExecStop=/usr/bin/docker stop -t 10 describesong
 Restart=always

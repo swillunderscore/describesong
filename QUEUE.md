@@ -927,3 +927,28 @@ DIEGO VIP, "solo nylon string guitar brazilian" -> Consolação.
 
 STILL TO DO before a switch: get the 606 MB model onto the Pi and confirm
 Cloudflare will serve it, then `VIBEFIND_MODEL=mulan` in the service file.
+
+### READY 2026-09-12 — MuLan is plumbed end to end. One word switches it on.
+Everything below is deployed to the Pi and live-tested. The site is still on
+CLAP; nothing about the switch is irreversible.
+
+- Models on the Pi: web/models/mulan_spec_fp16.onnx(+.data) 609 MB for
+  browsers, data/models/mulan_text_int8.onnx(+.data) 316 MB for the server.
+- Cloudflare serves the 606 MB weights: HTTP 206 range requests, 6.7 MB/s,
+  `immutable` so a browser fetches it once ever. cf-cache-status is DYNAMIC,
+  so it comes off the Pi each first visit — ~95 s of its upstream per new
+  scanner. Worth watching if the site gets busy.
+- TO SWITCH: `VIBEFIND_MODEL=mulan` in deploy/describesong.service, then
+  daemon-reload + restart. To switch back, the same line and restart; both
+  ears' vectors and index files stay on disk.
+- On switching: 2,035 of 2,276 tracks already have MuLan vectors (seeded from
+  the trial), so search works immediately. The other 241 are invisible until
+  someone scans them, and re-scanning a folder fills them at ~1.6 s/track.
+- A browser with no WebGPU falls back to WASM at ~36 s/track. That is the one
+  real cost of the switch and it lands on people with old machines.
+
+### STILL OPEN
+- Vocal separation before transcription, to lift the 26 % lyric figure. Not
+  measured yet; the only thing he asked for that I have not done.
+- int8 for the audio tower needs per-layer mixed precision (a blanket pass
+  gave cosine 0.887). Would take the browser download from 606 MB to ~320 MB.
