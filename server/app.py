@@ -491,7 +491,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         v = via.get(tid); fr = facts_rows.get(tid)
         mr = media_rows.get(int(tid))
         res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"], "year": fr["year"] if fr else None, "country": fr["country"] if fr else None,
-                    "cover": mr["cover"] if mr else None, "play": bool(mr),
+                    "cover": mr["cover"] if mr else None, "play": bool(mr), "country_name": _places.display_name(fr["country"]) if fr and fr["country"] else None,
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "via": v[0] if v else "sound",
                     "confidence": (100 if v[1] >= 0.99 else max(60, int(round(100 * v[1])))) if v else int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
@@ -567,7 +567,7 @@ def quoted_hits(phrases, limit=200):
     return None if need is None else [(t, 1.0) for t in need]
 
 # ---- facts: MusicBrainz for identified tracks; script/language hints from the names for every track ----
-import mbfacts as _mb, facts as _facts
+import mbfacts as _mb, facts as _facts, places as _places
 def _store_facts(tid, year, genres, country, source):
     with db() as c:
         row = c.execute("SELECT script, lang, year, genres FROM track_facts WHERE track_id=?", (tid,)).fetchone()

@@ -261,3 +261,11 @@ def place(value):
     if v2 in PLACE_NAMES: return PLACE_NAMES[v2]
     if "the " + v in PLACE_NAMES: return PLACE_NAMES["the " + v]
     return None
+
+_SMALL = {"of", "the", "and"}
+def display_name(code):
+    """'NO' -> 'Norway', 'US' -> 'United States', 'CD' -> 'Democratic Republic of the Congo'"""
+    i = COUNTRIES.get((code or "").upper())
+    if not i: return code
+    words = i["name"].split(" ")
+    return " ".join(w if (w in _SMALL and n) else w[:1].upper() + w[1:] for n, w in enumerate(words))
