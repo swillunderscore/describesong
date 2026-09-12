@@ -447,3 +447,21 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   cache: 22-35 s per query (prompt eval alone 12-15 s on this CPU). Dead.
   Conclusion: the sentence is not the problem; the space is. Words (names,
   lyrics) and facts (year, vocals, country) are the levers left.
+
+### BUILT 2026-09-12 — precision on demand (no model)
+- Field syntax in the box: artist:/by:, title:/song:, album:, lyrics:/words:,
+  year:, country:, from: (year or country by its value), sound:. Values end at
+  a closing quote or the first comma; the rest is free text. Labelled names go
+  through FTS on THAT column and lead as "matched the name"; lyrics: behaves
+  like quotes; year:/country: and stated facts in plain words (facts.parse)
+  FILTER the sound results — tracks with unknown facts are never excluded;
+  "instrumental"/"no vocals" excludes tracks whose lyrics were found.
+- Negated phrases ("not microwave beepy", "without drums") are dropped from
+  the sound query: the text tower cannot negate, and including them pulls in
+  what the person is ruling out.
+- Client-side query model: rejected. A 0.5B LLM is a 300-500 MB download for
+  a search box, and the labelled-field syntax gives the precision he asked for
+  at zero cost; the ambiguity (chicago the title / artist / place) is resolved
+  by the label when it matters and tolerable when it doesn't.
+- Verified locally on real tracks: artist:, title:, by:, lyrics:, year:, from:,
+  negation, instrumental all behave; no tracebacks.

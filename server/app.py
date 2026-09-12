@@ -287,7 +287,19 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     ratelimit(client_ip(request), 3000)
     q = q.strip()[:500]        # the text tower reads ~77 tokens anyway; no reason to tokenise a novel
     if not q: raise HTTPException(400, "empty query")
-    qv = text_embed(q)
+    # PRECISION ON DEMAND: labelled parts are matched as what they are (artist:,
+    # title:, album:, lyrics:, year:, country:), quoted phrases must be in the
+    # lyrics, stated facts filter, negated phrases are dropped, and what is left
+    # is the sound. Nothing here needs a model; the sound model only ever sees
+    # the sound words.
+    import facts as _facts
+    fields = _facts.parse_fields(q); free = fields.get("free", "")
+    stated = _facts.parse(free); sound_q = _facts.strip_negations(stated["stripped"]) or free
+    if fields.get("year"):
+        y = _facts.parse(fields["year"]); stated["year_from"], stated["year_to"] = y["year_from"] or stated["year_from"], y["year_to"] or stated["year_to"]
+    if fields.get("country"):
+        c = _facts.parse(fields["country"]); stated["country"] = c["country"] or _facts.COUNTRIES.get(fields["country"].lower()) or stated["country"]
+    qv = text_embed(sound_q if len(sound_q) >= 2 else q)
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     if exact:
         # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
@@ -305,7 +317,15 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     # query in the name, is an exact kind of evidence the sound model cannot
     # give. Those tracks lead (only on the first page), marked with how.
     via = {}; quoted_miss = False
-    phrases = re.findall(r'"([^"]{2,120})"|“([^”]{2,120})”', q); phrases = [a or b for a, b in phrases]
+    phrases = re.findall(r'"([^"]{2,120})"|“([^”]{2,120})”', free); phrases = [a or b for a, b in phrases]
+    if fields.get("lyrics"): phrases.append(fields["lyrics"])
+    if offset == 0 and any(fields.get(f) for f in ("artist", "title", "album")):
+        with db() as c:
+            cond = " AND ".join("%s:%s" % (f, " ".join('"%s"' % t for t in re.findall(r"[^\s\"]+", fields[f]))) for f in ("artist", "title", "album") if fields.get(f))
+            try:
+                for r in c.execute("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ? ORDER BY bm25(tracks_fts) LIMIT 100", (cond,)).fetchall(): via.setdefault(r["rowid"], ("name", 1.0))
+            except Exception: pass
+        if not via: quoted_miss = quoted_miss or True
     if offset == 0 and phrases:
         # QUOTES INSIST: only tracks whose lyrics contain every quoted phrase,
         # ordered by how the rest of the sentence sounds (or by name if nothing else was said)
@@ -321,10 +341,21 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                 for i in order: via[int(INDEX.ids[srt[i]])] = ("lyrics", 0.5 + 0.5 * float(sc[i]))
             else:
                 for t, _ in qh: via[t] = ("lyrics", 1.0)
-    if offset == 0 and not phrases:
+    if stated["year_from"] or stated["country"] or stated["instrumental"]:
+        with db() as c:
+            keep = set()
+            for r in c.execute("SELECT t.id, f.year, f.country, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
+                ok = True
+                if stated["year_from"] and r["year"] and not (stated["year_from"] <= r["year"] <= stated["year_to"]): ok = False
+                if stated["country"] and r["country"] and r["country"] != stated["country"]: ok = False
+                if stated["instrumental"] and r["lyrics_state"] == "found": ok = False
+                if ok: keep.add(r["id"])
+        kept = [(t, sc) for t, sc in zip(ids, scores) if t in keep]
+        if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
+    if offset == 0 and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):
         for t, frac in lyric_hits(q):
             if frac >= 0.34 or (frac > 0 and len(_lyr.norm_words(q)) <= 5): via.setdefault(t, ("lyrics", frac))
-        for t, _ in name_hits(q): via.setdefault(t, ("name", 1.0))
+        for t, _ in name_hits(free): via.setdefault(t, ("name", 1.0))
     lead = [t for t, _ in sorted(via.items(), key=lambda kv: -kv[1][1])]
     merged = [(t, top_all) for t in lead] + [(t, float(sc)) for t, sc in zip(ids, scores) if t not in via]
     ids = [t for t, _ in merged][offset:offset + k]; scores = np.array([sc for _, sc in merged][offset:offset + k], np.float32)   # the page asked for

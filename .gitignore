@@ -13,3 +13,6 @@ fingerprint-wasm/pkg-node/
 node_modules/
 *.log
 .DS_Store
+mulan-trial/exp/
+mulan-trial/lp-music-caps/
+mulan-trial/.venv-caps/

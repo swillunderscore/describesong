@@ -46,7 +46,34 @@ def parse(q):
     out["stripped"] = re.sub(r"\s+", " ", re.sub(r"\b(from|around|about|circa|by a|by an|in the)\s*$", "", s)).strip(" ,")
     return out
 
+FIELDS = ("artist", "by", "title", "song", "album", "year", "country", "from", "lyrics", "lyric", "words", "sound", "sounds")
+_FIELD_RE = re.compile(r"(?<![\w])(" + "|".join(FIELDS) + r")\s*:\s*", re.I)
+def parse_fields(q):
+    """'beepy synth artist: röyksopp year: 2001 lyrics: "up all night"' ->
+    {'artist': 'röyksopp', 'year': '2001', 'lyrics': 'up all night', 'free': 'beepy synth'}.
+    Precision on demand: anything labelled is matched as that thing, the rest is the sound."""
+    parts = _FIELD_RE.split(q); out = {"free": parts[0].strip(" ,;")}
+    for i in range(1, len(parts) - 1, 2):
+        k = parts[i].lower(); raw = parts[i + 1]
+        # a value is the quoted phrase if it starts with a quote, else up to the first comma; the rest is free text
+        m = re.match(r'\s*["“]([^"”]+)["”]\s*(.*)$', raw, re.S) or re.match(r"\s*([^,;]+)[,;]?\s*(.*)$", raw, re.S)
+        v, rest = (m.group(1).strip(), m.group(2).strip(" ,;")) if m else (raw.strip(), "")
+        k = {"by": "artist", "song": "title", "lyric": "lyrics", "words": "lyrics", "sounds": "sound"}.get(k, k)
+        if k == "from": k = "year" if re.search(r"\d{2}", v) or any(w in v.lower() for w in DECADES) else "country"
+        if k == "sound": out["free"] = (out["free"] + " " + v).strip()
+        elif v: out[k] = v
+        if rest: out["free"] = (out["free"] + " " + rest).strip()
+    return out
+
+_NEG_RE = re.compile(r"\b(?:but\s+)?(?:not|no|without|minus|except|nothing like|unlike)\s+(?:a |an |the |any )?([\w'-]+(?:\s+[\w'-]+){0,3}?)(?=\s*(?:,|;|\.|$|\s+(?:and|but|with|just|more)\b))", re.I)
+def strip_negations(text):
+    """The sound model has no idea what 'not' means: 'not microwave beepy' pulls in
+    microwaves. Negated phrases are dropped from the sound query (kept nowhere)."""
+    return re.sub(r"\s{2,}", " ", _NEG_RE.sub("", text)).strip(" ,;")
+
 if __name__ == "__main__":
     for q in ["plucky staccato beepy hip hop ish beat with synths, early 2000s, norwegian duo, no vocals", "laid back nineties rap with a jazzy sample and a relaxed male rapper", "female singer, acoustic guitar, whistling in the intro, around 2010",
               "hard electro house with a massive bass drop from around 2012", "something sad on piano", "mid 80s synth pop, she sings the chorus", "instrumental trip hop from 2001 with a bouncy synth riff", "late '70s disco with strings"]:
         print(q, "\n   ->", parse(q))
+    for q in ['beepy synth artist: röyksopp year: 2001', 'title: chicago', 'lyrics: "up all night" female vocals from: norway', 'by: daft punk album: discovery, funky', 'beepy but not microwave beepy, retro sci-fi bleeps', 'no vocals, just piano, without drums']:
+        f = parse_fields(q); print(q, "\n   fields ->", f, "| free after negations:", repr(strip_negations(f["free"])))
