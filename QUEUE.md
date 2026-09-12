@@ -424,3 +424,19 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   would run yet. Parked.
 - Fewer windows per track measured worse than the all-window mean (median
   134-175 vs 78). Averaging the whole track stays.
+
+### BUILT 2026-09-12 — quotes insist; facts from the file's own tags; mobile header
+- Lyric BIGRAM hashes stored alongside trigrams (lyric_bigrams); tracks found
+  before the table existed are re-fetched once at startup. A phrase in
+  "quotes" must be present (all its bigrams, or trigrams for 3+ words); the
+  matches lead, ordered by how the REST of the sentence sounds ("says 'oh
+  yeah' a bunch, female vocals" = tracks containing "oh yeah", ranked by the
+  sound of "female vocals"). No match → quoted_miss → the page says so and
+  shows the closest sounds. Single quoted words are ignored (no unigram index).
+- track_facts(track_id, year, genres, country, source): the client now reads
+  year (TYER/TDRC/TDRL/TYE, FLAC DATE) and genre (TCON/TCO, FLAC GENRE) from
+  the file and sends them; stored with source='tags' unless MusicBrainz facts
+  already exist for the track. MusicBrainz facts (year/genres/country) are the
+  next step, pending the filter measurement.
+- Header stats show on mobile again (smaller blocks; the coffee block drops
+  its caption line).

@@ -94,7 +94,8 @@ $("#f").addEventListener("submit", async e => {
   const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE).then(r => r.json()).catch(() => null);
   if (mine !== seqNo) return;
   if (!r) { $("#res").innerHTML = '<span class="blk b">server unreachable</span>'; return; }
-  if (r.broad) { $("#hint").textContent = "No clear winner — that fits a lot of the music here about equally. Add an instrument, an era, or a mood."; $("#hint").hidden = false; }
+  if (r.quoted_miss) { $("#hint").textContent = "No song in the index has those quoted words in its lyrics. Showing the closest sounds instead."; $("#hint").hidden = false; }
+  else if (r.broad) { $("#hint").textContent = "No clear winner — that fits a lot of the music here about equally. Add an instrument, an era, or a mood."; $("#hint").hidden = false; }
   else if (r.small) { $("#hint").textContent = `Only ${r.count} track${r.count === 1 ? "" : "s"} in the database so far — confidences are rough until there are more.`; $("#hint").hidden = false; }
   if (!r.results.length) { $("#res").innerHTML = `<span class="blk">nothing in the database yet (${r.count} tracks) — add some below.</span>`; return; }
   $("#res").innerHTML = ""; appendResults(r.results, 0); cur.offset = r.results.length; cur.done = r.results.length < PAGE; sentinel();
@@ -273,7 +274,8 @@ async function scan(all) {
       // AcoustID can know the recording but hand back an empty title/artist;
       // keep its id, but never store a blank label when the file has tags.
       const tags = (await readTags(f)) || guessFromName(f.name);
-      let label = idr.mbid && (idr.title || idr.artist) ? { artist: idr.artist || tags.artist, title: idr.title || tags.title, album: idr.album || tags.album } : tags;
+      let label = idr.mbid && (idr.title || idr.artist) ? { artist: idr.artist || tags.artist, title: idr.title || tags.title, album: idr.album || tags.album } : { artist: tags.artist, title: tags.title, album: tags.album };
+      const facts = { year: tags.year || null, genre: tags.genre || null };
       if (!idr.mbid && idr.prior && (idr.prior.artist || idr.prior.title)) {
         if (normL(idr.prior) === normL(label)) {
           if (!r) { log(`= ${label.artist || "?"} — ${label.title || f.name} (already in, same label)`); return; }   // nothing new to say
@@ -282,7 +284,7 @@ async function scan(all) {
           if (ok) label = { artist: idr.prior.artist, title: idr.prior.title, album: idr.prior.album };
         }
       }
-      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, mean: r ? r.mean : null, moments: r ? r.moments : [] });
+      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, ...facts, mean: r ? r.mean : null, moments: r ? r.moments : [] });
       if (sub.ok) { if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in — label confirmed)`); }
       else { failed++; log(`✗ ${f.name}: ${sub.detail || "rejected"}`); }
     } catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); }
@@ -373,7 +375,7 @@ async function id3v2(file, head) {
   const ver = head[3], size = syncsafe(head, 6);
   const b = new Uint8Array(await file.slice(10, 10 + size).arrayBuffer());
   let o = (head[5] & 0x40) ? (ver === 4 ? syncsafe(b, 0) : u32be(b, 0) + 4) : 0;   // skip extended header
-  const want = ver === 2 ? { TP1: "artist", TT2: "title", TAL: "album" } : { TPE1: "artist", TIT2: "title", TALB: "album" };
+  const want = ver === 2 ? { TP1: "artist", TT2: "title", TAL: "album", TYE: "year", TCO: "genre" } : { TPE1: "artist", TIT2: "title", TALB: "album", TYER: "year", TDRC: "year", TDRL: "year", TCON: "genre" };
   const out = {}; const idLen = ver === 2 ? 3 : 4, hdr = ver === 2 ? 6 : 10;
   while (o + hdr <= b.length) {
     const id = String.fromCharCode(...b.subarray(o, o + idLen)); if (!/^[A-Z0-9]+$/.test(id)) break;
@@ -381,7 +383,8 @@ async function id3v2(file, head) {
     if (want[id]) out[want[id]] = id3text(b.subarray(o + hdr, o + hdr + len));
     o += hdr + len;
   }
-  return out.title || out.artist ? { artist: out.artist || null, title: out.title || null, album: out.album || null } : null;
+  const year = out.year ? parseInt(String(out.year).slice(0, 4), 10) : null;
+  return out.title || out.artist ? { artist: out.artist || null, title: out.title || null, album: out.album || null, year: year && year > 1900 ? year : null, genre: out.genre ? out.genre.replace(/^\(\d+\)/, "").trim() || null : null } : null;
 }
 async function flacTags(file) {
   let o = 4;
@@ -394,9 +397,10 @@ async function flacTags(file) {
       for (let i = 0; i < n && p + 4 <= b.length; i++) {
         const l = u32le(b, p); p += 4; const kv = td.decode(b.subarray(p, p + l)); p += l;
         const eq = kv.indexOf("="); const k = kv.slice(0, eq).toUpperCase(), v = kv.slice(eq + 1).trim();
-        if (k === "ARTIST" && !out.artist) out.artist = v; else if (k === "TITLE") out.title = v; else if (k === "ALBUM") out.album = v;
+        if (k === "ARTIST" && !out.artist) out.artist = v; else if (k === "TITLE") out.title = v; else if (k === "ALBUM") out.album = v; else if (k === "DATE" || k === "YEAR") out.year = v; else if (k === "GENRE" && !out.genre) out.genre = v;
       }
-      return out.title || out.artist ? { artist: out.artist || null, title: out.title || null, album: out.album || null } : null;
+      const year = out.year ? parseInt(String(out.year).slice(0, 4), 10) : null;
+      return out.title || out.artist ? { artist: out.artist || null, title: out.title || null, album: out.album || null, year: year && year > 1900 ? year : null, genre: out.genre || null } : null;
     }
     if (last) return null; o += 4 + len;
   }

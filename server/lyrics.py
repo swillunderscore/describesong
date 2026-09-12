@@ -25,7 +25,8 @@ def norm_words(text):
     return [w.strip("'") for w in t.split() if w.strip("'")]
 
 def grams(words, n=3):
-    """hashed word-trigrams as signed 63-bit ints (fits SQLite INTEGER)"""
+    """hashed word n-grams as signed 63-bit ints (fits SQLite INTEGER). n=3 for
+    plain searches (precision), n=2 for phrases the searcher put in quotes."""
     out = set()
     for i in range(len(words) - n + 1):
         h = hashlib.sha1(" ".join(words[i:i + n]).encode()).digest()
@@ -53,7 +54,7 @@ def fetch_lyrics(artist, title, album=None, duration=None):
         return "missing", None
 
 class LyricsWorker:
-    """One thread, one queue. store(tid, state, gram_set) is the caller's DB write."""
+    """One thread, one queue. store(tid, state, trigrams, bigrams) is the caller's DB write."""
     def __init__(self, store, on_done=None):
         self.q = queue.Queue(); self.store = store; self.on_done = on_done or (lambda *_: None)
         self.pending = set(); self.lock = threading.Lock(); self.last = 0.0
@@ -71,8 +72,9 @@ class LyricsWorker:
             if wait > 0: time.sleep(wait)
             self.last = time.time()
             state, text = fetch_lyrics(artist, title, album, duration)
-            g = grams(norm_words(text)) if text else set()
-            try: self.store(tid, state, g)
+            w = norm_words(text) if text else []
+            g = grams(w, 3); g2 = grams(w, 2)
+            try: self.store(tid, state, g, g2)
             except Exception as e: print("lyrics: store failed", tid, e)
             with self.lock: self.pending.discard(tid)
             self.on_done(tid, state, len(g))
