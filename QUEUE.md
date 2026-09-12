@@ -774,3 +774,35 @@ Scratch: scratchpad/onnx/ (export_audio.py, cut3.py, endtoend.py).
   for this track. /api/search returns `has` per result.
 - Fishy fishy reads: sounds and preview yes, everything else no — which is
   the honest reason it was hard to find.
+
+### MEASURED 2026-09-12 — MuLan really is ~10x slower than CLAP, and it is not the browser's fault
+Same machine, same CPU backend, one 10 s window, median of 6:
+
+| model                         | ms / 10 s window |
+|-------------------------------|------------------|
+| CLAP audio tower (PyTorch fp32)|   55 |
+| MuLan audio tower (ONNX fp32)  |  530 |
+| MuLan audio tower (ONNX fp16)  |  576 |
+
+- The earlier "9x" from compare.py was NOT a batching artifact; it holds up.
+- fp16 is not faster on CPU (no native fp16 compute) — it is for SIZE.
+- Cause is architecture, not parameter count (334M vs ~150M): MuQ works at a
+  much finer time resolution, 1001 frames per 10 s window.
+- CLAP IS UNTOUCHED. Nothing in the fp16/int8/STFT work above changed the
+  model the site runs. That work is all on the MuLan conversion.
+
+### BUILT 2026-09-12 — sound-only search
+- `?sound_only=1`, checkbox on the page: "Nothing is written down about this
+  song — go by sound alone". Drops stated facts, the name lead, lyric matching
+  and fact tiering, so a well-documented track cannot outrank an obscure one
+  on paperwork it happens to have. His idea.
+- Badges now show ONLY what is missing (no lyrics / no year / no country) and
+  say nothing when the index has it. His correction: lit pips implied every
+  path mattered equally, when the sound is the point of the site.
+
+### NEXT (his call) — a local embedding program, his idea and the right one
+A small CLI people run on their own machine: no 638 MB browser download, the
+full GPU, and ONNX Runtime's native providers cover ROCm, CUDA, DirectML and
+CPU from the same file. Power users get speed and MuLan; the browser stays the
+zero-install path. This is what makes MuLan shippable without forcing 638 MB
+on a casual visitor.
