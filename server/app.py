@@ -321,6 +321,7 @@ def submit(body: SubmitIn, request: Request):
     name_facts(tid)
     if body.mbid: FACTS.enqueue(tid, body.mbid)
     else: FACTS.enqueue_name(tid, body.artist, body.title)   # unidentified: the artist's country and the song's year by NAME
+    requeue_facts_errors()
     queue_lyrics(tid)
     if new_track: publish_stats()
     return {"ok": True, "track_id": tid}
@@ -584,7 +585,15 @@ with db() as _c:
     for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR f.source LIKE '%-error' OR (f.country IS NULL AND f.source='musicbrainz' AND f.fetched < strftime('%s','now') - 30*86400))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
     # unidentified tracks: look the artist up by name (country) and the title (year)
     for r in _c.execute("SELECT t.id, t.artist, t.title FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NULL AND (f.source IS NULL OR f.source IN ('names', 'tags') OR f.source LIKE '%-error')").fetchall(): FACTS.enqueue_name(r["id"], r["artist"], r["title"])
-print("facts: queued", FACTS.q.qsize())
+def requeue_facts_errors(limit=20):
+    """Lookups MusicBrainz could not answer are retried on the next submission
+    (no timers: activity is the clock), a few at a time, oldest first."""
+    with db() as c:
+        rows = c.execute("SELECT t.id, t.mbid, t.artist, t.title FROM tracks t JOIN track_facts f ON f.track_id=t.id WHERE f.source LIKE '%-error' AND f.fetched < ? ORDER BY f.fetched LIMIT ?", (time.time() - 600, limit)).fetchall()
+    for r in rows:
+        if r["mbid"]: FACTS.enqueue(r["id"], r["mbid"])
+        else: FACTS.enqueue_name(r["id"], r["artist"], r["title"])
+print("facts: queued", FACTS.q.qsize(), flush=True)
 
 def lyric_hits(q, limit=30):
     """tracks sharing hashed trigrams with the query -> [(track_id, fraction of query grams matched)]"""

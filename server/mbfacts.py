@@ -11,17 +11,18 @@ GAP = 1.05
 class Unavailable(Exception):
     """MusicBrainz could not be asked (network, 5xx, rate limit): not the same as
     MusicBrainz saying no. A miss is stored; an error is retried at the next start."""
+BACKOFF = (5, 10, 20, 40, 60)   # MusicBrainz's search answers "busy" (503) often, even at one request a second; it passes in seconds
 def _get(url):
-    for attempt in range(3):
+    for attempt, wait in enumerate(BACKOFF):
         try:
             return json.load(urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=15))
         except urllib.error.HTTPError as e:
-            if e.code in (503, 429, 500, 502, 504): time.sleep(5 + 5 * attempt); continue
+            if e.code in (503, 429, 500, 502, 504): time.sleep(wait); continue
             if e.code == 404: return None
             raise Unavailable(str(e))
         except Exception as e:
             raise Unavailable(str(e))
-    raise Unavailable("gave up after 3 attempts")
+    raise Unavailable("still busy after %d attempts" % len(BACKOFF))
 
 def title_year(artist_id, title):
     """Earliest release year of ANY recording of this title by this artist. AcoustID
@@ -93,7 +94,7 @@ class FactsWorker:
         self.last = time.time()
     def _run(self):
         while True:
-            kind, tid, mbid = self.q.get()
+            item = self.q.get(); kind, tid, mbid = item[:3]; tries = item[3] if len(item) > 3 else 0
             try:
                 if kind == "name":
                     artist_name, title = mbid
@@ -118,7 +119,8 @@ class FactsWorker:
                         if c: country = c; break
                 self.store(tid, rec["year"] if rec else None, rec["genres"] if rec else [], country, "musicbrainz" if rec else "musicbrainz-miss")
             except Unavailable as e:
-                print("mbfacts: unavailable", tid, e); self.store(tid, None, [], None, "musicbrainz-name-error" if kind == "name" else "musicbrainz-error")
+                if tries < 2: print("mbfacts: unavailable, requeued", tid, e, flush=True); self.q.put((kind, tid, mbid, tries + 1)); continue
+                print("mbfacts: unavailable, giving up until next start", tid, e, flush=True); self.store(tid, None, [], None, "musicbrainz-name-error" if kind == "name" else "musicbrainz-error")
             except Exception as e:
-                print("mbfacts: failed", tid, e)
+                print("mbfacts: failed", tid, e, flush=True)
             with self.lock: self.pending.discard(tid)
