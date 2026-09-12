@@ -1024,3 +1024,25 @@ identity available and reached for fuzzy name matching instead.
   knowing before anyone tries it again.
 - TIMEFRAME: this project is three days old. Nothing here happened "months
   ago" and I should stop saying it.
+
+### 2026-09-12 — the last stragglers, and two mislabelled rows found on the way
+2,274 of 2,276 have MuLan vectors. Named, with the reason for each:
+- 760 Justice "Phantom, Pt I.5" — FIXED. Its file is called plainly
+  "05 - Phantom.mp3", 262 s against the row's 262 s. Embedded directly.
+- 737 KIDS SEE GHOSTS "Cudi Montage" (141 s) — FIXED, and the ROW LOOKS
+  MISLABELLED. The index has two "Cudi Montage" rows, 141 s and 197 s. The
+  real one is 197 s (row 742). Nothing in the index is called "Fire", and the
+  album's "02 - Fire.mp3" is 140 s and is row 737's nearest file by CLAP at
+  0.856 against a runner-up of 0.770. So row 737 is almost certainly Fire,
+  labelled Cudi Montage by AcoustID. Its vector now describes the audio.
+- 885 Polo & Pan "Zoom Zoom" (191 s) — FIXED, same shape of problem. Nothing
+  in the index is called "Nanã"; the album's "06 - Nanã.mp3" is 190 s and is
+  the nearest file at 0.836. Thinner margin (0.024) but the duration and the
+  artist folder both agree.
+- 1060 공중도둑 "Ahhhh, These Chains!" (308 s) and 1839 Metro Station "Disco"
+  (156 s) — NOT FIXABLE from here. Neither artist has a folder in
+  /mnt/pi-nvme/homestead/library and neither file is anywhere on this machine.
+  They need a scan of wherever he actually has them.
+- WORTH CHASING SEPARATELY: if AcoustID mislabelled two rows out of 2,276,
+  there are probably more. A pass comparing each row's stored label against
+  its nearest neighbours would find them.
