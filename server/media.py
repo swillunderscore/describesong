@@ -61,22 +61,28 @@ class MediaWorker:
     def __init__(self, store):
         # a priority queue: what someone is LOOKING AT right now (a results page) goes
         # before the background walk through the library, which takes hours
-        self.q = queue.PriorityQueue(); self.seq = 0; self.store = store; self.pending = set(); self.lock = threading.Lock(); self.last = {"itunes": 0.0, "deezer": 0.0}
+        self.q = queue.PriorityQueue(); self.seq = 0; self.store = store; self.pending = {}; self.lock = threading.Lock(); self.last = {"itunes": 0.0, "deezer": 0.0}
         self.down = 0; self.probe = 0
         threading.Thread(target=self._run, name="media", daemon=True).start()
     def enqueue(self, tid, artist, title, duration, urgent=False):
+        """pending maps track -> priority; an urgent ask for a track already waiting
+        in the background walk jumps the queue (the stale entry is skipped when
+        its turn comes, because the track is no longer pending)"""
         if not (artist or title): return
+        pri = 0 if urgent else 1
         with self.lock:
-            if tid in self.pending: return
-            self.pending.add(tid); self.seq += 1
-            self.q.put((0 if urgent else 1, self.seq, (tid, artist or "", title or "", duration or 0)))
+            if self.pending.get(tid, 9) <= pri: return
+            self.pending[tid] = pri; self.seq += 1
+            self.q.put((pri, self.seq, (tid, artist or "", title or "", duration or 0)))
     def _pace(self, who):
         wait = PACE[who] - (time.time() - self.last[who])
         if wait > 0: time.sleep(wait)
         self.last[who] = time.time()
     def _run(self):
         while True:
-            _, _, (tid, artist, title, duration) = self.q.get()
+            pri, _, (tid, artist, title, duration) = self.q.get()
+            with self.lock:
+                if self.pending.get(tid) != pri: continue      # done already, or superseded by an urgent copy
             try:
                 if self.down >= 3:
                     self.probe += 1
@@ -89,4 +95,4 @@ class MediaWorker:
             except Exception as e:
                 print("media: failed", tid, e, flush=True); self.store(tid, None, "error")
             finally:
-                with self.lock: self.pending.discard(tid)
+                with self.lock: self.pending.pop(tid, None)
