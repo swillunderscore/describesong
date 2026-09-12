@@ -126,7 +126,7 @@ function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
-        <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div>
+        <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}${t.year || t.country ? ` <span class="facts">${[t.year, t.country].filter(Boolean).join(" · ")}</span>` : ""}</div>
         <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
       <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span></span>
     </article>`;

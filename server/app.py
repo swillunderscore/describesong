@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS vectors(    -- mean vector + up to 4 moments, all uni
 CREATE TABLE IF NOT EXISTS ratelimit(ip TEXT PRIMARY KEY, window REAL, n INTEGER);
 
 CREATE TABLE IF NOT EXISTS lyric_grams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS track_facts(track_id INTEGER PRIMARY KEY, year INTEGER, genres TEXT, country TEXT, source TEXT, fetched REAL);
+CREATE TABLE IF NOT EXISTS track_facts(track_id INTEGER PRIMARY KEY, year INTEGER, genres TEXT, country TEXT, source TEXT, fetched REAL, script TEXT, lang TEXT);
+CREATE TABLE IF NOT EXISTS artists(mbid TEXT PRIMARY KEY, country TEXT, name TEXT);
 CREATE TABLE IF NOT EXISTS lyric_bigrams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(artist, title, album, content='');
 """
@@ -98,6 +99,11 @@ with db() as _c:
     if _c.execute("SELECT COUNT(*) FROM tracks_fts").fetchone()[0] != _c.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]:
         _c.execute("DELETE FROM tracks_fts")
         _c.executemany("INSERT INTO tracks_fts(rowid, artist, title, album) VALUES(?,?,?,?)", _c.execute("SELECT id, artist, title, album FROM tracks").fetchall())
+
+with db() as _c:
+    cols = [r[1] for r in _c.execute("PRAGMA table_info(track_facts)")]
+    for col in ("script", "lang"):
+        if col not in cols: _c.execute("ALTER TABLE track_facts ADD COLUMN %s TEXT" % col)
 
 # ---- the index --------------------------------------------------------------
 # Exact matmul while it fits in RAM; faiss IVF-PQ with exact re-ranking beyond;
@@ -272,6 +278,8 @@ def submit(body: SubmitIn, request: Request):
             if not c.execute("SELECT 1 FROM track_facts WHERE track_id=? AND source='musicbrainz'", (tid,)).fetchone():
                 c.execute("INSERT OR REPLACE INTO track_facts(track_id, year, genres, country, source, fetched) VALUES(?,?,?,?,?,?)",
                           (tid, body.year, json.dumps([body.genre.strip().lower()]) if body.genre else None, None, "tags", now))
+    name_facts(tid)
+    if body.mbid: FACTS.enqueue(tid, body.mbid)
     queue_lyrics(tid)
     if new_track: publish_stats()
     return {"ok": True, "track_id": tid}
@@ -344,10 +352,17 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     if stated["year_from"] or stated["country"] or stated["instrumental"]:
         with db() as c:
             keep = set()
-            for r in c.execute("SELECT t.id, f.year, f.country, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
+            want_script = _facts.SCRIPT_COUNTRIES.get(stated["country"] or "")
+            for r in c.execute("SELECT t.id, f.year, f.country, f.script, f.lang, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
                 ok = True
                 if stated["year_from"] and r["year"] and not (stated["year_from"] <= r["year"] <= stated["year_to"]): ok = False
-                if stated["country"] and r["country"] and r["country"] != stated["country"]: ok = False
+                if stated["country"]:
+                    # A known country decides. Unknown: only STRONG evidence excludes — a non-Latin
+                    # script that isn't the one that country writes in. Letter hints (ø, ö, ñ) never
+                    # exclude: Röyksopp's ö would have "proved" they aren't Norwegian.
+                    if r["country"]: ok = ok and r["country"] == stated["country"]
+                    elif r["script"] and r["script"] != "latin" and want_script: ok = ok and r["script"] == want_script
+                    elif r["script"] and r["script"] != "latin" and not want_script: ok = False   # cyrillic name, "norwegian" asked
                 if stated["instrumental"] and r["lyrics_state"] == "found": ok = False
                 if ok: keep.add(r["id"])
         kept = [(t, sc) for t, sc in zip(ids, scores) if t in keep]
@@ -362,6 +377,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     if not len(ids): return {"results": [], "broad": False, "small": n < MIN_FOR_STATS, "count": n, "exact": bool(is_exact), "mode": INDEX.mode}
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
+        facts_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, year, country FROM track_facts WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
     # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
     # The raw cosine says nothing: "gay" scores 0.61, above most true hits. What
     # separates a description from an obtuse word is how far the leader stands
@@ -378,8 +394,8 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     for tid, s in zip(ids, scores):
         r = rows.get(tid)
         if not r: continue
-        v = via.get(tid)
-        res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"],
+        v = via.get(tid); fr = facts_rows.get(tid)
+        res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"], "year": fr["year"] if fr else None, "country": fr["country"] if fr else None,
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "via": v[0] if v else "sound",
                     "confidence": (100 if v[1] >= 0.99 else max(60, int(round(100 * v[1])))) if v else int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
@@ -451,6 +467,33 @@ def quoted_hits(phrases, limit=200):
         got = {r["track_id"] for r in rows}
         need = got if need is None else (need & got)
     return None if need is None else [(t, 1.0) for t in need]
+
+# ---- facts: MusicBrainz for identified tracks; script/language hints from the names for every track ----
+import mbfacts as _mb, facts as _facts
+def _store_facts(tid, year, genres, country, source):
+    with db() as c:
+        row = c.execute("SELECT script, lang, year FROM track_facts WHERE track_id=?", (tid,)).fetchone()
+        c.execute("INSERT OR REPLACE INTO track_facts(track_id, year, genres, country, source, fetched, script, lang) VALUES(?,?,?,?,?,?,?,?)",
+                  (tid, year or (row["year"] if row else None), json.dumps(genres) if genres else None, country, source, time.time(), row["script"] if row else None, row["lang"] if row else None))
+def _artist_get(mbid):
+    with db() as c: r = c.execute("SELECT country FROM artists WHERE mbid=?", (mbid,)).fetchone()
+    return None if r is None else (r["country"] or "")
+def _artist_put(mbid, country, name):
+    with db() as c: c.execute("INSERT OR REPLACE INTO artists(mbid, country, name) VALUES(?,?,?)", (mbid, country, name))
+FACTS = _mb.FactsWorker(_store_facts, _artist_get, _artist_put)
+def name_facts(tid):
+    """script and letter hints from the track's own artist/title — for every track, no network"""
+    with db() as c:
+        r = c.execute("SELECT artist, title FROM tracks WHERE id=?", (tid,)).fetchone()
+        if not r: return
+        txt = (r["artist"] or "") + " " + (r["title"] or "")
+        sc = _facts.script_of(txt); lh = ",".join(_facts.lang_hints(txt)) or None
+        if c.execute("SELECT 1 FROM track_facts WHERE track_id=?", (tid,)).fetchone(): c.execute("UPDATE track_facts SET script=?, lang=? WHERE track_id=?", (sc, lh, tid))
+        else: c.execute("INSERT INTO track_facts(track_id, script, lang, source) VALUES(?,?,?,?)", (tid, sc, lh, "names"))
+with db() as _c:
+    for r in _c.execute("SELECT t.id FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE f.track_id IS NULL OR f.script IS NULL AND f.lang IS NULL").fetchall(): name_facts(r["id"])
+    for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR (f.country IS NULL AND f.source='musicbrainz'))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
+print("facts: queued", FACTS.q.qsize())
 
 def lyric_hits(q, limit=30):
     """tracks sharing hashed trigrams with the query -> [(track_id, fraction of query grams matched)]"""

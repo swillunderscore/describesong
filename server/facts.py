@@ -6,7 +6,7 @@ import re
 DECADES = {"fifties": 1950, "sixties": 1960, "seventies": 1970, "eighties": 1980, "nineties": 1990, "noughties": 2000, "two thousands": 2000}
 COUNTRIES = {"norwegian": "NO", "swedish": "SE", "danish": "DK", "finnish": "FI", "icelandic": "IS", "british": "GB", "english": "GB", "scottish": "GB", "welsh": "GB", "irish": "IE", "french": "FR", "german": "DE", "dutch": "NL", "belgian": "BE",
   "spanish": "ES", "portuguese": "PT", "italian": "IT", "brazilian": "BR", "argentinian": "AR", "mexican": "MX", "colombian": "CO", "cuban": "CU", "jamaican": "JM", "american": "US", "canadian": "CA", "australian": "AU", "japanese": "JP", "korean": "KR", "chinese": "CN",
-  "indian": "IN", "nigerian": "NG", "ghanaian": "GH", "south african": "ZA", "russian": "RU", "polish": "PL", "ukrainian": "UA", "turkish": "TR", "greek": "GR", "israeli": "IL", "iranian": "IR", "egyptian": "EG", "moroccan": "MA", "malian": "ML", "senegalese": "SN", "congolese": "CD", "ethiopian": "ET"}
+  "indian": "IN", "nigerian": "NG", "czech": "CZ", "hungarian": "HU", "romanian": "RO", "bulgarian": "BG", "serbian": "RS", "estonian": "EE", "thai": "TH", "vietnamese": "VN", "indonesian": "ID", "filipino": "PH", "taiwanese": "TW", "saudi": "SA", "ghanaian": "GH", "south african": "ZA", "russian": "RU", "polish": "PL", "ukrainian": "UA", "turkish": "TR", "greek": "GR", "israeli": "IL", "iranian": "IR", "egyptian": "EG", "moroccan": "MA", "malian": "ML", "senegalese": "SN", "congolese": "CD", "ethiopian": "ET"}
 
 def parse(q):
     """-> dict(year_from, year_to, instrumental, vocals, country) with None where the text says nothing. Also `stripped`: the query without those words."""
@@ -46,6 +46,27 @@ def parse(q):
     out["stripped"] = re.sub(r"\s+", " ", re.sub(r"\b(from|around|about|circa|by a|by an|in the)\s*$", "", s)).strip(" ,")
     return out
 
+import unicodedata as _ud
+def script_of(text):
+    """Dominant writing system of a name: latin, cyrillic, greek, cjk, kana, hangul, arabic, hebrew, thai, devanagari — or None."""
+    counts = {}
+    for ch in text or "":
+        if not ch.isalpha(): continue
+        try: name = _ud.name(ch)
+        except ValueError: continue
+        for key, tag in (("CJK", "cjk"), ("HIRAGANA", "kana"), ("KATAKANA", "kana"), ("HANGUL", "hangul"), ("CYRILLIC", "cyrillic"), ("GREEK", "greek"), ("ARABIC", "arabic"), ("HEBREW", "hebrew"), ("THAI", "thai"), ("DEVANAGARI", "devanagari"), ("LATIN", "latin")):
+            if name.startswith(key): counts[tag] = counts.get(tag, 0) + 1; break
+    return max(counts, key=counts.get) if counts else None
+# letters that only some languages use: a weak hint, used only when the artist's country is unknown
+_LETTER_HINTS = {"ø": ["NO", "DK"], "å": ["NO", "DK", "SE"], "æ": ["NO", "DK", "IS"], "ö": ["SE", "FI", "DE", "TR", "IS"], "ä": ["SE", "FI", "DE"], "ü": ["DE", "TR"], "ß": ["DE"], "ð": ["IS"], "þ": ["IS"],
+  "ñ": ["ES", "MX", "AR", "CO"], "ã": ["PT", "BR"], "ç": ["PT", "BR", "FR", "TR"], "õ": ["PT", "BR", "EE"], "ł": ["PL"], "ż": ["PL"], "ś": ["PL"], "ę": ["PL"], "ą": ["PL"], "ř": ["CZ"], "ě": ["CZ"], "ů": ["CZ"], "ő": ["HU"], "ű": ["HU"], "ı": ["TR"], "ş": ["TR", "RO"], "ğ": ["TR"], "ț": ["RO"], "ș": ["RO"], "ħ": ["MT"], "ĳ": ["NL"]}
+SCRIPT_COUNTRIES = {"JP": "kana", "KR": "hangul", "CN": "cjk", "TW": "cjk", "RU": "cyrillic", "UA": "cyrillic", "BG": "cyrillic", "RS": "cyrillic", "GR": "greek", "IL": "hebrew", "TH": "thai", "IN": "devanagari", "EG": "arabic", "SA": "arabic", "MA": "arabic", "IR": "arabic"}
+def lang_hints(text):
+    out = []
+    for ch in (text or "").lower():
+        for c in _LETTER_HINTS.get(ch, []):
+            if c not in out: out.append(c)
+    return out
 FIELDS = ("artist", "by", "title", "song", "album", "year", "country", "from", "lyrics", "lyric", "words", "sound", "sounds")
 _FIELD_RE = re.compile(r"(?<![\w])(" + "|".join(FIELDS) + r")\s*:\s*", re.I)
 def parse_fields(q):

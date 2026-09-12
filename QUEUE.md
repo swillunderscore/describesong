@@ -465,3 +465,21 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   by the label when it matters and tolerable when it doesn't.
 - Verified locally on real tracks: artist:, title:, by:, lyrics:, year:, from:,
   negation, instrumental all behave; no tracebacks.
+
+### BUILT 2026-09-12 — time and place (measured first: Eple 309→64 with "early 2000s", 164→36 with "instrumental")
+- mbfacts.py: MusicBrainz worker, 1 req/s, recording → first release year +
+  genre tags + artist ids; artist → country (cached in `artists`). Queued on
+  submit for identified tracks; startup catch-up for tracks without facts.
+- facts.py: script_of() (latin/cyrillic/greek/cjk/kana/hangul/arabic/hebrew/
+  thai/devanagari) and lang_hints() (ø/å/ö/ñ/ł… → candidate countries) from
+  artist+title, for EVERY track, no network; stored in track_facts.
+- Filters: a known country decides; unknown country is excluded only by a
+  non-Latin script that contradicts (a Cyrillic name when "norwegian" was
+  asked; a Latin name when "japanese" was asked is NOT excluded — romanised
+  names exist). Letter hints never exclude (Röyksopp's ö is not Norwegian).
+  Year: unknown never excluded. Instrumental: excludes tracks whose lyrics
+  were found (LRCLIB mismatches can wrongly exclude an instrumental — known).
+- Results show "year · country" when known.
+- One-time load: the 1,989 MusicBrainz facts fetched for the measurement go
+  into the Pi's track_facts (years, genres) immediately; the worker then fills
+  countries (~45 min of polite requests).
