@@ -23,8 +23,8 @@ const EXAMPLES = [
   "trap song with a flute melody and a whispered chorus",
   "drum and bass with a soulful female vocal and a liquid bassline",
   "the one that goes: we're up all night to get lucky",
-  "royksopp eple",
   "female vocals, acoustic guitar, whistling in the intro, sounds like 2010",
+  "early 2000s, norwegian, plucky synth riff, no vocals",
   "instrumental, plucked synth melody, slow hip hop drums, warm bass",
 ];
 $("#q").placeholder = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
