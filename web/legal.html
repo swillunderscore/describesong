@@ -42,6 +42,8 @@
 
 <h2 id="scale">How big it can get, and what the coffee buys</h2>
 <p>The whole thing runs on one Raspberry Pi. Right now every search compares your description against <b>every</b> track in the index, exactly, in a fraction of a second. That stays true up to about half a million tracks. Past that the Pi switches to the kind of index every large search engine uses: tracks are grouped by how they sound, and a search opens only the groups it could land in. Still under a second at two hundred million tracks; the trade is that it becomes very-nearly-exact instead of exact. The Pi's disk has room for that many. What more memory buys is pushing the "exact" line further out, and more searches per second when a lot of people show up at once. That's what the coffee is for.</p>
+<h2>Covers and previews</h2>
+<p>The cover and the 30-second preview next to a result come from the store that sells the song, through Apple's iTunes Search API or Deezer's public API, matched by artist, title and length. The audio streams from their servers to your browser; nothing is stored here. Each preview links to the store it came from. A song no store sells has no preview, and that's that.</p>
 <h2>Abuse</h2>
 <p>Requests are rate-limited per address. The database can be read only through the search box; bulk export is not offered here (it is available under the ODbL on request).</p>
 

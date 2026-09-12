@@ -653,3 +653,25 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   2,276, sounds 2,251 (25 heard nothing / failed before the sentinel), lyrics
   found 1,304 + instrumental 257 + not on LRCLIB 715, year 1,983, country
   1,770 (+ the 287 name lookups in flight).
+
+### BUILT 2026-09-12 — covers and 30-second previews on every result
+- server/media.py: by name, from the two public catalogue APIs made for this
+  (a link back to the store is the price): Apple's iTunes Search API first
+  (no key, stable preview URLs, 600 px art, ~20 requests/min), Deezer second
+  (no key; preview URLs expire, so the track id is stored and a fresh URL is
+  fetched at play time via /api/play/{id}). A match needs the same artist and
+  title (normalised, parentheticals dropped) and a duration within 6 s.
+  media(track_id, source, ext_id, preview, cover, link, state, fetched).
+  One paced worker; catch-up at start (2,276 tracks ≈ 2 h); new tracks on
+  submit; errors retried on the next submission; circuit breaker as facts.
+- Results carry cover + play; the cover IS the play button (triangle on
+  hover, bars while playing, a thin progress line, "on Apple Music" /
+  "on Deezer" link while it plays). One <audio> for the page, kept in the
+  document — Chrome aborts play() on a detached element (measured: AbortError).
+  No preview → the cover alone; nothing known → a solid block, so rows align.
+- Why not YouTube: the official embed needs a video id, the Data API allows
+  100 searches a day, and scraping search is against their terms. Previews
+  are the above-board version of the same button. Verified in the browser:
+  a real click plays Apple's preview (3.9 s in after 4 s, 30 s long).
+- Decided without asking (say if wrong): Apple before Deezer; 6 s duration
+  tolerance; 54 px cover; placeholder blocks for rows without art.

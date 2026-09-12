@@ -44,7 +44,17 @@ form.search button { font: 800 13px/1 var(--font); letter-spacing: .1em; text-tr
 
 /* results = nested rows */
 #res { display: flex; flex-direction: column; gap: 8px; margin-top: 12px }
-.hit { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; animation: pop .3s both; animation-delay: var(--d, 0ms) }
+.hit { display: grid; grid-template-columns: auto auto 1fr auto; gap: 14px; align-items: center; animation: pop .3s both; animation-delay: var(--d, 0ms) }
+/* the cover is the play button: art from the store, a triangle over it, bars while it plays, a thin line of progress along the bottom */
+.cover { position: relative; display: block; width: 54px; height: 54px; border-radius: 6px; overflow: hidden; padding: 0; border: 0; background: var(--b2, rgba(0,0,0,.12)); flex: none }
+.cover img { width: 100%; height: 100%; object-fit: cover; display: block }
+.cover.ph { background: rgba(0,0,0,.10) }
+.cover.play { cursor: pointer } .cover.play svg { position: absolute; inset: 0; width: 100%; height: 100%; padding: 15px; fill: #fff; filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); opacity: .0; transition: opacity .15s }
+.cover.play:hover svg, .cover.play:focus-visible svg, .hit.playing .cover.play svg { opacity: 1 } .cover.play:not(:has(img)) svg { opacity: .9; fill: var(--ink) ; filter: none }
+.cover.play .bars { display: none } .hit.playing .cover.play .bars { display: block } .hit.playing .cover.play .tri { display: none }
+.hit.playing .cover::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(100% * var(--played, 0)); background: #fff; opacity: .9 }
+.cover.dead { cursor: default; opacity: .5 }
+.hit .src { display: none; font-size: 11px; color: var(--ink3); text-decoration: none; margin-top: 4px } .hit.playing .src { display: inline-block } .hit .src:hover { text-decoration: underline }
 .hit .t { font-size: 17px; font-weight: 800; line-height: 1.2 } .hit .s { color: var(--ink2); font-size: 12.5px; margin-top: 2px } .hit .n { color: var(--ink3); font-size: 11px; margin-right: 6px }
 .tag { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; padding: 6px 10px; border-radius: 8px; color: var(--ink2); background: rgb(21 21 26 / .08); white-space: nowrap; font-weight: 700 }
 .tag.v { background: var(--ink); color: var(--a) }
@@ -63,7 +73,7 @@ form.search button { font: 800 13px/1 var(--font); letter-spacing: .1em; text-tr
 .log { grid-column: 1 / -1; font-size: 11.5px; line-height: 1.6; color: var(--ink2); max-height: 200px; overflow: auto; white-space: pre-wrap; border-top: 1px solid rgb(21 21 26 / .15); padding-top: 8px }
 dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(--r); padding: 22px; max-width: 440px; font: 13.5px/1.5 var(--font) } dialog::backdrop { background: #000a }
 .foot .blk { font-size: 12px; min-height: 38px; padding: 8px 12px; color: var(--ink2) } .foot .blk a { color: var(--ink) }
-@media (max-width: 860px) { main { grid-template-columns: 1fr; grid-template-areas: "ban" "top" "res" "side" "foot" } .hit { grid-template-columns: auto 1fr } .hit .tag { grid-column: 2; justify-self: start } .hide-sm { display: none !important } }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; grid-template-areas: "ban" "top" "res" "side" "foot" } .hit { grid-template-columns: auto auto 1fr } .hit .tag { grid-column: 2; justify-self: start } .hide-sm { display: none !important } }
 
 /* corner settings block — the desktop's Colors / Water tabs, in miniature */
 .tc label { display: grid; grid-template-columns: 74px 1fr 40px; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2) }

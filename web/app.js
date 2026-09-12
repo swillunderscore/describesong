@@ -124,11 +124,13 @@ function sentinel() {
 }
 function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
+      ${t.play ? `<button type="button" class="cover play" data-id="${t.id}" title="30-second preview" aria-label="play a 30-second preview">${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ""}<svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M8 5v14l11-7z"/><path class="bars" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>`
+               : t.cover ? `<span class="cover"><img src="${esc(t.cover)}" alt="" loading="lazy"></span>` : `<span class="cover ph"></span>`}
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}${t.year || t.country ? ` <span class="facts">${[t.year, t.country].filter(Boolean).join(" · ")}</span>` : ""}</div>
         <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
-      <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span></span>
+      <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>${t.play ? `<a class="src" href="#" target="_blank" rel="noopener"></a>` : ""}</span>
     </article>`;
 }
 function appendResults(results, start) {
@@ -163,6 +165,26 @@ function swapResults(results) {
     }
   }, leaving.length ? 350 : 0);
 }
+// PREVIEWS. One player for the page; the cover is the button. The audio is the
+// store's own 30-second preview, streamed from Apple or Deezer, never from here.
+const player = new Audio(); player.preload = "none"; player.hidden = true; document.body.appendChild(player); let playingId = null;   // in the document: Chrome aborts play() on a detached element
+const setPlaying = id => {
+  playingId = id;
+  for (const el of document.querySelectorAll(".hit.playing")) el.classList.remove("playing");
+  if (id != null) { const row = document.querySelector(`.hit[data-id="${id}"]`); if (row) row.classList.add("playing"); }
+};
+player.addEventListener("ended", () => setPlaying(null)); player.addEventListener("pause", () => { if (player.ended || player.currentTime === 0) setPlaying(null); });
+player.addEventListener("timeupdate", () => { const row = playingId != null && document.querySelector(`.hit[data-id="${playingId}"]`); if (row && player.duration) row.style.setProperty("--played", (player.currentTime / player.duration).toFixed(3)); });
+$("#res").addEventListener("click", async e => {
+  const b = e.target.closest(".cover.play"); if (!b) return;
+  const id = b.dataset.id;
+  if (playingId === id) { if (player.paused) { player.play(); b.closest(".hit").classList.add("playing"); } else { player.pause(); b.closest(".hit").classList.remove("playing"); } return; }
+  const r = await fetch("/api/play/" + id).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (!r) { b.classList.add("dead"); b.title = "no preview"; return; }
+  player.src = r.url; setPlaying(id); player.play().catch(err => { console.warn("preview:", err.name, err.message); setPlaying(null); });
+  const row = b.closest(".hit"), src = row.querySelector(".src");
+  if (src) { src.href = r.link; src.textContent = r.source === "itunes" ? "on Apple Music" : "on Deezer"; }
+});
 // "More like this": the track's own vector as the query — browsing by sound.
 $("#res").addEventListener("click", async e => {
   const b = e.target.closest(".morelike"); if (!b) return;

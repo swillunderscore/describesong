@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS track_facts(track_id INTEGER PRIMARY KEY, year INTEGE
 CREATE TABLE IF NOT EXISTS artists(mbid TEXT PRIMARY KEY, country TEXT, name TEXT);
 CREATE TABLE IF NOT EXISTS track_events(track_id INTEGER NOT NULL, cls TEXT NOT NULL, prob REAL NOT NULL, PRIMARY KEY(track_id, cls)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_events_cls ON track_events(cls, prob);
+CREATE TABLE IF NOT EXISTS media(track_id INTEGER PRIMARY KEY, source TEXT, ext_id TEXT, preview TEXT, cover TEXT, link TEXT, state TEXT, fetched REAL);
 CREATE TABLE IF NOT EXISTS lyric_bigrams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(artist, title, album, content='');
 """
@@ -322,6 +323,7 @@ def submit(body: SubmitIn, request: Request):
     if body.mbid: FACTS.enqueue(tid, body.mbid)
     else: FACTS.enqueue_name(tid, body.artist, body.title)   # unidentified: the artist's country and the song's year by NAME
     requeue_facts_errors()
+    MEDIA.enqueue(tid, body.artist, body.title, body.duration); requeue_media()
     queue_lyrics(tid)
     if new_track: publish_stats()
     return {"ok": True, "track_id": tid}
@@ -466,6 +468,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
         facts_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, year, country FROM track_facts WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
+        media_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, cover, source FROM media WHERE state='ok' AND track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
     # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
     # The raw cosine says nothing: "gay" scores 0.61, above most true hits. What
     # separates a description from an obtuse word is how far the leader stands
@@ -483,7 +486,9 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         r = rows.get(tid)
         if not r: continue
         v = via.get(tid); fr = facts_rows.get(tid)
+        mr = media_rows.get(int(tid))
         res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"], "year": fr["year"] if fr else None, "country": fr["country"] if fr else None,
+                    "cover": mr["cover"] if mr else None, "play": bool(mr),
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "via": v[0] if v else "sound",
                     "confidence": (100 if v[1] >= 0.99 else max(60, int(round(100 * v[1])))) if v else int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
@@ -585,6 +590,34 @@ with db() as _c:
     for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR f.source LIKE '%-error' OR (f.country IS NULL AND f.source='musicbrainz' AND f.fetched < strftime('%s','now') - 30*86400))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
     # unidentified tracks: look the artist up by name (country) and the title (year)
     for r in _c.execute("SELECT t.id, t.artist, t.title FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NULL AND (f.source IS NULL OR f.source IN ('names', 'tags') OR f.source LIKE '%-error')").fetchall(): FACTS.enqueue_name(r["id"], r["artist"], r["title"])
+# ---- covers and previews: by name, from Apple's and Deezer's public catalogue APIs ----
+import media as _media
+def _store_media(tid, m, state):
+    with db() as c:
+        c.execute("INSERT OR REPLACE INTO media(track_id, source, ext_id, preview, cover, link, state, fetched) VALUES(?,?,?,?,?,?,?,?)",
+                  (tid, m["source"] if m else None, m["ext_id"] if m else None, m["preview"] if m else None, m["cover"] if m else None, m["link"] if m else None, state, time.time()))
+MEDIA = _media.MediaWorker(_store_media)
+def requeue_media(limit=20):
+    """new tracks, and lookups that could not be answered (retried on the next submission, oldest first)"""
+    with db() as c:
+        rows = c.execute("SELECT t.id, t.artist, t.title, t.duration FROM tracks t LEFT JOIN media m ON m.track_id=t.id WHERE m.track_id IS NULL OR (m.state='error' AND m.fetched < ?) ORDER BY m.fetched LIMIT ?", (time.time() - 600, limit)).fetchall()
+    for r in rows: MEDIA.enqueue(r["id"], r["artist"], r["title"], r["duration"])
+if os.environ.get("VIBEFIND_MEDIA_CATCHUP", "1") == "1": requeue_media(limit=100000)
+print("media: queued", MEDIA.q.qsize(), flush=True)
+
+@app.get("/api/play/{tid}")
+def play(tid: int, request: Request):
+    """the store's own 30-second preview for a track: a URL the browser streams, never audio from here"""
+    ratelimit(client_ip(request), 3000)
+    with db() as c: m = c.execute("SELECT source, ext_id, preview, link FROM media WHERE track_id=? AND state='ok'", (tid,)).fetchone()
+    if not m: raise HTTPException(404, "no preview")
+    url = m["preview"]
+    if m["source"] == "deezer":
+        try: url = _media.deezer_preview(m["ext_id"])
+        except _media.Unavailable: url = None
+    if not url: raise HTTPException(404, "no preview")
+    return {"url": url, "source": m["source"], "link": m["link"]}
+
 def requeue_facts_errors(limit=20):
     """Lookups MusicBrainz could not answer are retried on the next submission
     (no timers: activity is the clock), a few at a time, oldest first."""
@@ -627,7 +660,9 @@ def similar(tid: int, request: Request, k: int = 30):
     pairs = [(t, float(sc)) for t, sc in zip(ids, scores) if t != tid][:k]
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
+        media_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, cover FROM media WHERE state='ok' AND track_id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
     res = [{"id": int(t), "artist": rows[t]["artist"], "title": rows[t]["title"], "album": rows[t]["album"], "verified": bool(rows[t]["verified"]), "via": "sound",
+            "cover": media_rows[t]["cover"] if t in media_rows else None, "play": t in media_rows,
             "score": round(sc, 4), "confidence": int(round(100 * max(0.0, min(1.0, sc))))} for t, sc in pairs if t in rows]
     return {"results": res, "exact": bool(is_exact), "count": int(INDEX.n)}
 
