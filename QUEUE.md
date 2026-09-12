@@ -483,3 +483,20 @@ the site got popular and the Pi is at its limit, which is the coffee case.
 - One-time load: the 1,989 MusicBrainz facts fetched for the measurement go
   into the Pi's track_facts (years, genres) immediately; the worker then fills
   countries (~45 min of polite requests).
+
+### Measured 2026-09-12 — captions (LP-MusicCaps, all 2,286 test tracks, 3 windows each)
+Same 12 queries, rank of the intended track: CLAP median 96 (top-10 4/12);
+captions alone via BM25 median 152 (top-10 0), via MiniLM sentence
+embedding median 173 (top-10 2); fusion CLAP+MiniLM median 61 (top-10 1,
+top-30 4); fusion of all three median 75 (top-10 1, top-30 5). Fusion helps
+the tail (Khruangbin 595→46, Blue Bossa 210→78, Higher 29→11) and hurts the
+head (SAN DIEGO VIP 4→31, Kendrick 2→12, Consola 1→28). The model also
+contradicts itself across windows (male/female vocal on the same track).
+Verdict: NOT worth a browser export (~900 MB, days, uncertain) at this
+quality. Parked. If revisited: only as a soft signal for concrete "menu"
+words (claps, whistling, vocal gender), never as a ranker. The captioner is
+CC-BY-NC, which would also need a decision.
+Facts tie note: "early 2000s … no vocals" ranks a known-2002 track and a
+known-instrumental track equally (each satisfies one stated fact); sound
+breaks the tie. Eple's own facts arrive when the MusicBrainz worker reaches
+it (it was past the cut of the measurement cache).
