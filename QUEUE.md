@@ -506,3 +506,24 @@ it (it was past the cut of the measurement cache).
   title by that artist and takes the minimum. A contradicting year DEMOTES a
   track below the unknowns instead of dropping it; a contradicting known
   country or script still drops.
+
+### Measured 2026-09-12 — "contains X" (captions vs CLAP, AudioSet referee)
+Referee: AST (527 AudioSet classes) over all 2,286 test tracks, three windows,
+max per class; positives = the referee's top 3 % per class. Average precision
+/ P@10, CLAP vs captions (BM25+MiniLM) vs fused:
+  instruments — CLAP wins clearly: acoustic guitar .58/.28, piano .63/.24,
+  trumpet .35/.12, violin .21/.09, drum machine .24/.04.
+  captions win: rapping .16/.04 (CLAP's "rapping" is nearly blind), bass
+  guitar .12/.06; saxophone about even, fused best at P@10 .70.
+  vocal gender: both poor (female .09/.09, male .11/.05).
+  hand claps, whistling, harmonica, beatboxing, church bells: the referee is
+  too unsure inside full mixes (97th-percentile prob ≤ 0.006) — UNMEASURED,
+  and no better referee is at hand.
+  means: AP .23 CLAP / .13 captions / .20 fused; P@10 .40 / .27 / .44.
+Verdict: captions add on a few categories and lose on most; fusion is a wash;
+the one question that motivated this (claps, whistling) cannot be settled
+with any referee we have. Parked for good unless labelled data appears. The
+ONE thing worth keeping from it: CLAP is nearly blind to "rapping" as a
+query word — worth a vocabulary note in "what the index hears" and maybe a
+rap-specific phrasing hint ("male rap vocals over a hip hop beat" scored far
+better than "rapping" in earlier tests).
