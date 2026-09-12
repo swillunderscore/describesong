@@ -281,7 +281,7 @@ def search(q: str, request: Request, k: int = 30):
     if not ids: return {"results": [], "broad": False, "small": True, "count": n}
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
-    # CONFIDENCE (decision 9, calibrated 2026-09-11 on 2286 tracks — see QUEUE.md).
+    # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
     # The raw cosine says nothing: "gay" scores 0.61, above most true hits. What
     # separates a description from an obtuse word is how far the leader stands
     # above the WHOLE library's median: specific queries 0.39–0.65, obtuse words
