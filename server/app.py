@@ -474,6 +474,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
         facts_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, year, country FROM track_facts WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
         media_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, cover, source FROM media WHERE state='ok' AND track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
+        ev_rows = {r["track_id"] for r in c.execute("SELECT DISTINCT track_id FROM track_events WHERE cls != '-' AND track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
         seen_media = {r["track_id"] for r in c.execute("SELECT track_id FROM media WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
     for t in ids:
         if int(t) not in seen_media and int(t) in rows: MEDIA.enqueue(int(t), rows[int(t)]["artist"], rows[int(t)]["title"], rows[int(t)]["duration"], urgent=True)
@@ -497,6 +498,11 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         mr = media_rows.get(int(tid))
         res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"], "year": fr["year"] if fr else None, "country": fr["country"] if fr else None,
                     "cover": mr["cover"] if mr else None, "play": bool(mr), "country_name": _places.display_name(fr["country"]) if fr and fr["country"] else None,
+                    # WHAT THE INDEX KNOWS about this track, so "unverified" stops being the
+                    # only thing said about it. Each is a real search path that does or
+                    # does not exist for this row.
+                    "has": {"name": bool(r["mbid"]), "words": r["lyrics_state"] == "found", "instrumental": r["lyrics_state"] == "instrumental",
+                            "when": bool(fr and fr["year"]), "where": bool(fr and fr["country"]), "sounds": int(tid) in ev_rows, "preview": bool(mr)},
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "via": v[0] if v else "sound",
                     "confidence": (100 if v[1] >= 0.99 else max(60, int(round(100 * v[1])))) if v else int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})

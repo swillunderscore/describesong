@@ -132,6 +132,26 @@ function sentinel() {
 }
 const coverHtml = t => t.play ? `<button type="button" class="cover play" data-id="${t.id}" title="30-second preview" aria-label="play a 30-second preview">${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ""}<svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M8 5v14l11-7z"/><path class="bars" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>`
   : t.cover ? `<span class="cover"><img src="${esc(t.cover)}" alt="" loading="lazy"></span>` : `<span class="cover ph"></span>`;
+// WHAT CAN FIND THIS TRACK. "unverified" only ever said one thing and it was
+// the least useful one; these are the search paths that exist for this row.
+const PATHS = [
+  ["name", "name", "matched to MusicBrainz, so the artist and title are the real ones"],
+  ["words", "words", "lyrics are on LRCLIB, so a line you remember can find it"],
+  ["when", "year", "the year is known, so \u201cearly 2000s\u201d can find it"],
+  ["where", "country", "the country is known, so \u201cnorwegian\u201d can find it"],
+  ["sounds", "sounds", "the tagger heard events in it, so \u201chand claps\u201d can find it"],
+];
+function knownHtml(t) {
+  const h = t.has; if (!h) return `<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>`;
+  const miss = PATHS.filter(([k]) => !h[k] && !(k === "words" && h.instrumental));
+  const have = PATHS.filter(([k]) => h[k] || (k === "words" && h.instrumental));
+  return `<span class="known" title="${have.map(([, l]) => l).join(", ") || "sound only"}${miss.length ? " · missing: " + miss.map(([, l]) => l).join(", ") : ""}">`
+    + PATHS.map(([k, label, why]) => {
+        const on = h[k] || (k === "words" && h.instrumental);
+        const lab = k === "words" && h.instrumental ? "instrumental" : label;
+        return `<span class="pip ${on ? "on" : "off"}" title="${on ? why : "not known — " + label + " can't find this one"}">${lab}</span>`;
+      }).join("") + `</span>`;
+}
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][n % 10]);
 function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
@@ -140,7 +160,7 @@ function rowHtml(t, i, start) {
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}${t.year || t.country ? ` <span class="facts">${[t.year, t.country_name || t.country].filter(Boolean).map(esc).join(" · ")}</span>` : ""}</div>
         <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
-      <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}<span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>${t.play ? `<a class="src" href="#" target="_blank" rel="noopener"></a>` : ""}</span>
+      <span class="tagcol">${t.via === "lyrics" ? '<span class="tag via">matched the words</span>' : t.via === "name" ? '<span class="tag via">matched the name</span>' : ""}${knownHtml(t)}${t.play ? `<a class="src" href="#" target="_blank" rel="noopener"></a>` : ""}</span>
     </article>`;
 }
 function appendResults(results, start) {

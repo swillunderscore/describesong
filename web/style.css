@@ -132,3 +132,9 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .hit .facts { color: var(--ink3); font-size: 11.5px; margin-left: 6px; letter-spacing: .04em }
 
 .chip.ev { background: var(--b); color: var(--ink) }
+
+/* what can find this track: one pip per search path, lit if the index has it */
+.known { display: flex; flex-wrap: wrap; gap: 3px; justify-content: flex-end; max-width: 190px }
+.pip { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 5px; cursor: default }
+.pip.on { background: var(--ink); color: var(--a) }
+.pip.off { background: transparent; color: var(--ink3); box-shadow: inset 0 0 0 1px currentColor; opacity: .55 }
