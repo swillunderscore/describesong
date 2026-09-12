@@ -153,6 +153,33 @@ function knownHtml(t) {
   return `<span class="known" title="the index has no ${miss.map(([, l]) => l).join(", no ")} for this track, so those words can't find it">`
     + miss.map(([, label, why]) => `<span class="pip off" title="${why}">no ${label}</span>`).join("") + `</span>`;
 }
+// CAN THIS BROWSER USE THE GRAPHICS CARD? Having a GPU is not enough — WebGPU
+// is a browser feature, and which browser on which system decides. The
+// difference is ~1.5 s a track against ~36 s, so say it plainly, before the
+// scan rather than after, and say what would fix it.
+async function gpuCheck() {
+  const box = $("#gpu"); if (!box) return;
+  const ua = navigator.userAgent;
+  const firefox = /Firefox\//.test(ua), safari = /Safari\//.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+  const linux = /Linux/.test(ua) && !/Android/.test(ua);
+  let adapter = null;
+  try { adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null; } catch {}
+  if (adapter) {
+    let name = "";
+    try { const i = await adapter.requestAdapterInfo?.(); name = [i?.vendor, i?.architecture].filter(Boolean).join(" "); } catch {}
+    box.className = "gpu ok";
+    box.innerHTML = `<b>Your graphics card is being used.</b> About 1.5 seconds a track${name ? ` · ${esc(name)}` : ""}.`;
+  } else {
+    const fix = firefox ? "Firefox only has it on Windows so far. Chrome or Edge will do the same scan about twenty times faster."
+      : safari ? "Safari added it recently — updating macOS or iOS may be enough. Chrome or Edge will work today."
+      : linux ? "On Linux this often needs enabling: open <code>chrome://flags</code>, turn on <b>Unsafe WebGPU Support</b>, and restart the browser."
+      : "Chrome or Edge will do the same scan about twenty times faster.";
+    box.className = "gpu no";
+    box.innerHTML = `<b>This browser can't use your graphics card.</b> A scan would take about 36 seconds a track instead of 1.5. ${fix}`;
+  }
+  box.hidden = false;
+}
+gpuCheck();
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][n % 10]);
 function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">

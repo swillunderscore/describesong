@@ -153,3 +153,9 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .top > .brand:where(a):hover { filter: none; opacity: .75 }
 
 @media (max-width: 860px) { .top > .stat { border-left: 0; padding-left: 0; margin-right: 12px } }
+
+/* whether the graphics card is usable here — said before a scan, not after */
+.gpu { font-size: 12px; line-height: 1.45; padding: 9px 12px; border-radius: var(--ri); margin-top: 8px }
+.gpu.ok { color: var(--ink2); box-shadow: inset 0 0 0 1px color-mix(in oklab, currentColor 20%, transparent) }
+.gpu.no { background: var(--a); color: var(--ink) }
+.gpu code { font-size: 11.5px; padding: 1px 4px; border-radius: 4px; background: color-mix(in oklab, currentColor 14%, transparent) }
