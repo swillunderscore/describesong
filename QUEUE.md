@@ -742,3 +742,35 @@ same way lyrics.py does, measure overlap with the real ones.
 - Where it would actually pay: the 715 tracks LRCLIB does not have, which
   today are unfindable by words at all. Would need its own tier ("heard, not
   looked up") so a transcription never outranks real lyrics.
+
+### BUILT 2026-09-12 — MuLan's audio tower exported to ONNX. It works.
+Scratch: scratchpad/onnx/ (export_audio.py, cut3.py, endtoend.py).
+
+- ONLY THE AUDIO HALF SHIPS. MuLan is two towers: audio 334M, text 328M. The
+  browser needs the audio one; the text tower runs on the Pi, once per query,
+  not once per track. That halves the download before anything else.
+- torch.onnx.export (dynamo) traced it first try, opset 18, 816 nodes, 28
+  distinct ops, all standard. **cosine vs PyTorch: 1.000000, max abs diff 8e-08.**
+- One blocker: node 5 is STFT, which ONNX Runtime Web has no kernel for. Cut
+  the graph after it, so the model takes the spectrogram and the browser makes
+  it (n_fft 2048, hop 240, periodic Hann, reflect-padded 1024 each side — all
+  read out of the graph's own initialisers, not guessed). A shape vector the
+  tail still wanted is baked in as a constant. Remaining risky ops: NONE.
+- END TO END, on real audio: numpy STFT -> cut ONNX model vs PyTorch
+  mulan(wavs=...) = **cosine 1.0**, on random noise and on Fishy fishy itself.
+- SIZE: fp32 1212 MB / fp16 638 MB (cosine 0.999999) / int8 321 MB (cosine
+  0.887 — too lossy, needs per-layer mixed precision, not a blanket pass).
+  fp16 is the shipping candidate; CLAP's browser download is ~200 MB.
+- HARDWARE: ONNX Runtime Web targets WebGPU, a browser API, not a vendor SDK.
+  His ROCm card, NVIDIA, Intel and integrated all take the same path, with
+  WASM as the fallback everywhere. Nothing here is CUDA-only.
+- STILL TO DO: the JS spectrogram (~40 lines, FFT over 1001 frames), ORT Web
+  wired into worker.js, a second vector kind in the DB + a MuLan text encoder
+  on the Pi, and a decision about the 638 MB download.
+
+### BUILT 2026-09-12 — results say what can find a track, not "unverified"
+- Five pips per row: name, words, year, country, sounds (words shows
+  "instrumental" when LRCLIB says so). Lit = the index has that search path
+  for this track. /api/search returns `has` per result.
+- Fishy fishy reads: sounds and preview yes, everything else no — which is
+  the honest reason it was hard to find.
