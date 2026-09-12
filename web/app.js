@@ -77,33 +77,74 @@ es.onmessage = e => { try { const d = JSON.parse(e.data); if ("tracks" in d) ren
 es.onerror = () => { if (lastN === null) $("#tTracks").textContent = "offline"; };
 
 // ---- search -----------------------------------------------------------------
+// One search = one query; pages of 30 arrive as you scroll (a sentinel at the
+// bottom asks for the next page), so the list is as long as the index.
+let cur = null;                                   // { q, exact, offset, done, seq }
+let seqNo = 0;
+const PAGE = 30;
 $("#f").addEventListener("submit", async e => {
   e.preventDefault();
   const q = $("#q").value.trim(); if (!q) return;
   $("#res").innerHTML = '<span class="blk">searching…</span>'; $("#hint").hidden = true;
-  const r = await fetch("/api/search?q=" + encodeURIComponent(q)).then(r => r.json()).catch(() => null);
+  const mine = ++seqNo; cur = { q, exact: false, offset: 0, done: false, seq: mine };
+  const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE).then(r => r.json()).catch(() => null);
+  if (mine !== seqNo) return;
   if (!r) { $("#res").innerHTML = '<span class="blk b">server unreachable</span>'; return; }
   if (r.broad) { $("#hint").textContent = "No clear winner — that fits a lot of the music here about equally. Add an instrument, an era, or a mood."; $("#hint").hidden = false; }
   else if (r.small) { $("#hint").textContent = `Only ${r.count} track${r.count === 1 ? "" : "s"} in the database so far — confidences are rough until there are more.`; $("#hint").hidden = false; }
   if (!r.results.length) { $("#res").innerHTML = `<span class="blk">nothing in the database yet (${r.count} tracks) — add some below.</span>`; return; }
-  renderResults(r.results);
+  $("#res").innerHTML = ""; appendResults(r.results, 0); cur.offset = r.results.length; cur.done = r.results.length < PAGE; sentinel();
   if (r.exact === false) {
     // the index answered from candidates; now check EVERY track, at low priority
     const more = document.createElement("div"); more.id = "more"; more.innerHTML = '<span class="spin"></span>Checking every track…'; $("#res").appendChild(more);
-    const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&exact=1").catch(() => null);
-    if (ex && ex.ok) { const rr = await ex.json(); renderResults(rr.results); const d = document.createElement("div"); d.id = "more"; d.textContent = "Checked every track."; $("#res").appendChild(d); }
+    const ex = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=" + PAGE + "&exact=1").catch(() => null);
+    if (mine !== seqNo) return;
+    if (ex && ex.ok) { const rr = await ex.json(); $("#res").innerHTML = ""; appendResults(rr.results, 0); cur.exact = true; cur.offset = rr.results.length; cur.done = rr.results.length < PAGE; sentinel();
+      const d = document.createElement("div"); d.id = "more"; d.textContent = "Checked every track."; $("#res").appendChild(d); }
     else more.remove();                                    // 503 = the server was busy; the fast answer stands
   }
 });
-function renderResults(results) {
-  $("#res").innerHTML = results.map((t, i) => `
-    <article class="blk hit" style="--d:${i * 30}ms">
+const io = new IntersectionObserver(async ents => {
+  if (!ents.some(x => x.isIntersecting) || !cur || cur.done || cur.loading) return;
+  cur.loading = true; const mine = cur.seq;
+  const r = await fetch(`/api/search?q=${encodeURIComponent(cur.q)}&k=${PAGE}&offset=${cur.offset}${cur.exact ? "&exact=1" : ""}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (!cur || mine !== cur.seq) return;
+  cur.loading = false;
+  if (!r || !r.results.length) { cur.done = true; sentinel(); return; }
+  appendResults(r.results, cur.offset); cur.offset += r.results.length; cur.done = r.results.length < PAGE; sentinel();
+});
+function sentinel() {
+  let s = $("#sentinel"); if (s) s.remove();
+  if (cur && !cur.done) { s = document.createElement("div"); s.id = "sentinel"; s.style.height = "1px"; $("#res").appendChild(s); io.observe(s); }
+}
+function appendResults(results, start) {
+  const frag = document.createElement("template");
+  frag.innerHTML = results.map((t, i) => `
+    <article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
-      <div><div class="t"><span class="n">${String(i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
-        <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div></div>
+      <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
+        <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}</div>
+        <button type="button" class="hear" data-id="${t.id}">What the index hears ▾</button><div class="tags" hidden></div></div>
       <span class="tag ${t.verified ? "v" : ""}">${t.verified ? "verified" : "unverified"}</span>
     </article>`).join("");
+  const more = $("#more"); const anchor = $("#sentinel") || more;
+  if (anchor) $("#res").insertBefore(frag.content, anchor); else $("#res").appendChild(frag.content);
 }
+// "What the index hears": the track's vector read back as the phrases it sits
+// closest to — the words that would find it. Fetched on demand, per track.
+$("#res").addEventListener("click", async e => {
+  const b = e.target.closest(".hear"); if (!b) return;
+  const box = b.nextElementSibling;
+  if (!box.hidden) { box.hidden = true; b.textContent = "What the index hears ▾"; return; }
+  b.textContent = "What the index hears ▴";
+  if (!box.dataset.loaded) {
+    box.innerHTML = '<span class="spin"></span>'; box.hidden = false;
+    const d = await fetch("/api/describe/" + b.dataset.id).then(r => r.ok ? r.json() : null).catch(() => null);
+    box.innerHTML = d ? d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + '<span class="chipnote">Try these words in a search — this is how the model describes the sound.</span>' : "couldn't load"; box.dataset.loaded = "1";
+  }
+  box.hidden = false;
+});
+
 
 // ---- scan a folder ------------------------------------------------------------
 const worker = new Worker("worker.js", { type: "module" });

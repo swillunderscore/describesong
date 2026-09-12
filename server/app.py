@@ -259,23 +259,25 @@ CAL_FLOOR = 0.15      # median cosine of unrelated tracks for a specific query, 
 
 # ---- /search : a sentence in, songs out ------------------------------------
 @app.get("/api/search")
-def search(q: str, request: Request, k: int = 30, exact: int = 0):
+def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 0):
     ratelimit(client_ip(request), 3000)
     q = q.strip()[:500]        # the text tower reads ~77 tokens anyway; no reason to tokenise a novel
     if not q: raise HTTPException(400, "empty query")
     qv = text_embed(q)
-    n = int(INDEX.n)
+    n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     if exact:
         # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
         # searching. 503 means "not now" and the page keeps the fast answer.
-        r = INDEX.exact_scan(qv, k=max(1, min(k, 100)))
+        r = INDEX.exact_scan(qv, k=want)
         if r is None: raise HTTPException(503, "busy")
         ids, scores, med_all = r; is_exact = True
     else:
         INDEX.busy += 1
-        try: ids, scores, med_all, is_exact = INDEX.search(qv, k=max(1, min(k, 100)))
+        try: ids, scores, med_all, is_exact = INDEX.search(qv, k=want)
         finally: INDEX.busy -= 1
     if not ids: return {"results": [], "broad": False, "small": True, "count": n, "exact": True}
+    top_all = float(scores[0]); ids, scores = list(ids)[offset:offset + k], np.asarray(scores)[offset:offset + k]   # the page asked for
+    if not len(ids): return {"results": [], "broad": False, "small": n < MIN_FOR_STATS, "count": n, "exact": bool(is_exact), "mode": INDEX.mode}
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
     # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
@@ -288,16 +290,48 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0):
     # floor stands in and the client says the numbers are rough.
     small = n < MIN_FOR_STATS
     med = CAL_FLOOR if small else med_all
-    top = float(scores[0]); gap = top - med
+    top = top_all; gap = top - med
     broad = (not small) and gap < BROAD_GAP
     res = []
     for tid, s in zip(ids, scores):
         r = rows.get(tid)
         if not r: continue
-        res.append({"artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"],
+        res.append({"id": int(tid), "artist": r["artist"], "title": r["title"], "album": r["album"], "mbid": r["mbid"],
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "confidence": int(round(100 * max(0.0, min(1.0, (float(s) - med) / GAP_REF))))})
     return {"results": res, "broad": broad, "small": small, "count": n, "gap": round(gap, 3), "exact": bool(is_exact), "mode": INDEX.mode}
+
+# ---- what the index hears ---------------------------------------------------
+# A track's vector against a vocabulary of phrases, same model, reversed. The
+# vocabulary's text vectors are computed once and cached next to the data.
+import vocab as _vocab
+_VOC = {}
+def vocab_matrix():
+    if "M" in _VOC: return _VOC["M"]
+    key = hashlib.sha1((MODEL_ID + "|" + "\n".join(_vocab.VOCAB)).encode()).hexdigest()[:12]
+    p = os.path.join(DATA, "vocab-%s.npz" % key)
+    if os.path.exists(p): M = np.load(p)["M"]
+    else:
+        M = np.stack([text_embed(t) for t in _vocab.VOCAB]).astype(np.float32); np.savez(p, M=M)
+    _VOC["M"] = M; return M
+
+@app.get("/api/describe/{tid}")
+def describe(tid: int, request: Request):
+    ratelimit(client_ip(request), 3000)
+    with db() as c:
+        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
+    if not row: raise HTTPException(404, "no such track")
+    v = np.frombuffer(row["vec"], np.float16).astype(np.float32)
+    M = vocab_matrix(); s = M @ v; med = float(np.median(s)); top = float(s.max())
+    order = np.argsort(-s)
+    out, seen = [], {}
+    for i in order:
+        g = _vocab.GROUP[_vocab.VOCAB[i]]
+        if seen.get(g, 0) >= 3 and g != "genre": continue           # a spread of kinds, not eight moods
+        seen[g] = seen.get(g, 0) + 1
+        out.append({"tag": _vocab.VOCAB[i], "group": g, "score": round(float(s[i]), 4), "pct": int(round(100 * max(0.0, (float(s[i]) - med) / max(1e-6, top - med))))})
+        if len(out) >= 12: break
+    return {"id": tid, "tags": out}
 
 def stats_dict():
     with db() as c:
