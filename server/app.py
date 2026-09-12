@@ -469,6 +469,9 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(ids)), ids)}
         facts_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, year, country FROM track_facts WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
         media_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, cover, source FROM media WHERE state='ok' AND track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
+        seen_media = {r["track_id"] for r in c.execute("SELECT track_id FROM media WHERE track_id IN (%s)" % ",".join("?" * len(ids)), ids)}
+    for t in ids:
+        if int(t) not in seen_media and int(t) in rows: MEDIA.enqueue(int(t), rows[int(t)]["artist"], rows[int(t)]["title"], rows[int(t)]["duration"], urgent=True)
     # CONFIDENCE (decision 9, calibrated 2026-09-11 on the test library — see QUEUE.md).
     # The raw cosine says nothing: "gay" scores 0.61, above most true hits. What
     # separates a description from an obtuse word is how far the leader stands
@@ -596,6 +599,7 @@ def _store_media(tid, m, state):
     with db() as c:
         c.execute("INSERT OR REPLACE INTO media(track_id, source, ext_id, preview, cover, link, state, fetched) VALUES(?,?,?,?,?,?,?,?)",
                   (tid, m["source"] if m else None, m["ext_id"] if m else None, m["preview"] if m else None, m["cover"] if m else None, m["link"] if m else None, state, time.time()))
+    if m: publish({"media": {"id": tid, "cover": m["cover"], "play": True}})   # pages showing this row fill the cover in live
 MEDIA = _media.MediaWorker(_store_media)
 def requeue_media(limit=20):
     """new tracks, and lookups that could not be answered (retried on the next submission, oldest first)"""
@@ -661,6 +665,9 @@ def similar(tid: int, request: Request, k: int = 30):
     with db() as c:
         rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
         media_rows = {r["track_id"]: r for r in c.execute("SELECT track_id, cover FROM media WHERE state='ok' AND track_id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
+        seen_media = {r["track_id"] for r in c.execute("SELECT track_id FROM media WHERE track_id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
+    for t, _ in pairs:
+        if t not in seen_media and t in rows: MEDIA.enqueue(int(t), rows[t]["artist"], rows[t]["title"], rows[t]["duration"], urgent=True)
     res = [{"id": int(t), "artist": rows[t]["artist"], "title": rows[t]["title"], "album": rows[t]["album"], "verified": bool(rows[t]["verified"]), "via": "sound",
             "cover": media_rows[t]["cover"] if t in media_rows else None, "play": t in media_rows,
             "score": round(sc, 4), "confidence": int(round(100 * max(0.0, min(1.0, sc))))} for t, sc in pairs if t in rows]

@@ -59,22 +59,24 @@ def deezer_preview(ext_id):
 
 class MediaWorker:
     def __init__(self, store):
-        self.q = queue.Queue(); self.store = store; self.pending = set(); self.lock = threading.Lock(); self.last = {"itunes": 0.0, "deezer": 0.0}
+        # a priority queue: what someone is LOOKING AT right now (a results page) goes
+        # before the background walk through the library, which takes hours
+        self.q = queue.PriorityQueue(); self.seq = 0; self.store = store; self.pending = set(); self.lock = threading.Lock(); self.last = {"itunes": 0.0, "deezer": 0.0}
         self.down = 0; self.probe = 0
         threading.Thread(target=self._run, name="media", daemon=True).start()
-    def enqueue(self, tid, artist, title, duration):
+    def enqueue(self, tid, artist, title, duration, urgent=False):
         if not (artist or title): return
         with self.lock:
             if tid in self.pending: return
-            self.pending.add(tid)
-        self.q.put((tid, artist or "", title or "", duration or 0))
+            self.pending.add(tid); self.seq += 1
+            self.q.put((0 if urgent else 1, self.seq, (tid, artist or "", title or "", duration or 0)))
     def _pace(self, who):
         wait = PACE[who] - (time.time() - self.last[who])
         if wait > 0: time.sleep(wait)
         self.last[who] = time.time()
     def _run(self):
         while True:
-            tid, artist, title, duration = self.q.get()
+            _, _, (tid, artist, title, duration) = self.q.get()
             try:
                 if self.down >= 3:
                     self.probe += 1

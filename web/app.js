@@ -77,7 +77,15 @@ function showRebuild(r) {
   else if (r.state === "done") { banner(`<b>Index rebuilt:</b> ${n} tracks. Searches are very-nearly-exact, with a full check running after each one. <a href="legal.html#scale">What that means</a>`); bannerTimer = setTimeout(() => banner(null), 90000); }
   else if (r.state === "failed") { banner(`<b>Index rebuild failed</b> — searching continues on the previous index. (${esc(r.note || "")})`); bannerTimer = setTimeout(() => banner(null), 60000); }
 }
-es.onmessage = e => { try { const d = JSON.parse(e.data); if ("tracks" in d) renderStats(d); if (d.rebuild) showRebuild(d.rebuild); } catch {} };
+es.onmessage = e => { try { const d = JSON.parse(e.data); if ("tracks" in d) renderStats(d); if (d.rebuild) showRebuild(d.rebuild); if (d.media) fillCover(d.media); } catch {} };
+// a cover looked up while this page is open lands in its row (the store lookup runs on the Pi, results first)
+function fillCover(m) {
+  for (const row of document.querySelectorAll(`.hit[data-id="${m.id}"]`)) {
+    const old = row.querySelector(".cover"); if (!old || old.classList.contains("play")) continue;
+    const tpl = document.createElement("template"); tpl.innerHTML = coverHtml({ id: m.id, cover: m.cover, play: m.play }); old.replaceWith(tpl.content.firstElementChild);
+    if (m.play && !row.querySelector(".src")) row.querySelector(".tagcol")?.insertAdjacentHTML("beforeend", `<a class="src" href="#" target="_blank" rel="noopener"></a>`);
+  }
+}
 es.onerror = () => { if (lastN === null) $("#tTracks").textContent = "offline"; };
 
 // ---- search -----------------------------------------------------------------
@@ -122,10 +130,11 @@ function sentinel() {
   let s = $("#sentinel"); if (s) s.remove();
   if (cur && !cur.done) { s = document.createElement("div"); s.id = "sentinel"; s.style.height = "1px"; $("#res").appendChild(s); io.observe(s); }
 }
+const coverHtml = t => t.play ? `<button type="button" class="cover play" data-id="${t.id}" title="30-second preview" aria-label="play a 30-second preview">${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ""}<svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M8 5v14l11-7z"/><path class="bars" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>`
+  : t.cover ? `<span class="cover"><img src="${esc(t.cover)}" alt="" loading="lazy"></span>` : `<span class="cover ph"></span>`;
 function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
-      ${t.play ? `<button type="button" class="cover play" data-id="${t.id}" title="30-second preview" aria-label="play a 30-second preview">${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ""}<svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M8 5v14l11-7z"/><path class="bars" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>`
-               : t.cover ? `<span class="cover"><img src="${esc(t.cover)}" alt="" loading="lazy"></span>` : `<span class="cover ph"></span>`}
+      ${coverHtml(t)}
       <span class="ring" style="--p:${t.confidence}"><span>${t.confidence}</span></span>
       <div><div class="t"><span class="n">${String(start + i + 1).padStart(2, "0")}</span>${esc(t.title || "untitled")}</div>
         <div class="s">${esc(t.artist || "unknown artist")}${t.album ? ` · ${esc(t.album)}` : ""}${t.year || t.country ? ` <span class="facts">${[t.year, t.country].filter(Boolean).join(" · ")}</span>` : ""}</div>
