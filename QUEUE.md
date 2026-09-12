@@ -952,3 +952,28 @@ CLAP; nothing about the switch is irreversible.
   measured yet; the only thing he asked for that I have not done.
 - int8 for the audio tower needs per-layer mixed precision (a blanket pass
   gave cosine 0.887). Would take the browser download from 606 MB to ~320 MB.
+
+### SWITCHED 2026-09-12 — the site runs on MuLan.
+`VIBEFIND_MODEL=mulan` on the Pi, live and serving. CLAP's vectors and index
+files are untouched on disk; switching back is the same one word.
+
+- 2,195 of 2,276 tracks have MuLan vectors. The other 81 are invisible to
+  search until someone scans them (~1.6 s/track).
+- Seeding took two passes. server/seed_vectors.py matched 2,035 by name.
+  server/seed_by_duration.py recovered another 160 by DURATION plus a required
+  title-word overlap — duration alone was rejected deliberately: a wrong vector
+  makes a track findable by the wrong description forever, which is worse than
+  a missing one. The last 81 are genuinely ambiguous.
+- GOTCHA: the trial .npz stores paths from when the project lived at
+  ~/vibefind, so every ffprobe silently returned nothing until they were
+  remapped. It reported "0 matched" rather than an error.
+- Don't copy the library to the Pi to do this (I started to: 11 GB into /tmp,
+  which has 29 GB total). Match locally, ship the 164 KB of vectors.
+
+MEASURED LIVE right after the switch:
+
+| query | CLAP (before) | MuLan (now) |
+|---|---|---|
+| dusty sample-based beat with a spoken word sample | 643 | **1** |
+| grungy lo-fi trip hop beat | 297 | **16** |
+| aggressive dubstep with wobbling bass | SAN DIEGO VIP #1 | SAN DIEGO VIP #1 |
