@@ -440,3 +440,10 @@ the site got popular and the Pi is at its limit, which is the coffee case.
   next step, pending the filter measurement.
 - Header stats show on mobile again (smaller blocks; the coffee block drops
   its caption line).
+- Rewrite, attempt 2 (few-shot, "leave caption-shaped queries alone", prompt
+  cached): the captions are now GOOD (Consola untouched, "sad piano thing" →
+  "slow, melancholic solo piano piece") and it still does nothing for rank:
+  median 114 vs 85 raw, top-10 3/12 both, top-30 4/12 both. Latency with the
+  cache: 22-35 s per query (prompt eval alone 12-15 s on this CPU). Dead.
+  Conclusion: the sentence is not the problem; the space is. Words (names,
+  lyrics) and facts (year, vocals, country) are the levers left.
