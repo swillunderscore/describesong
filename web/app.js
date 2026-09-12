@@ -73,7 +73,7 @@ function showRebuild(r) {
   else if (r.state === "done") { banner(`<b>Index rebuilt:</b> ${n} tracks. Searches are very-nearly-exact, with a full check running after each one. <a href="legal.html#scale">What that means</a>`); bannerTimer = setTimeout(() => banner(null), 90000); }
   else if (r.state === "failed") { banner(`<b>Index rebuild failed</b> — searching continues on the previous index. (${esc(r.note || "")})`); bannerTimer = setTimeout(() => banner(null), 60000); }
 }
-es.onmessage = e => { try { const d = JSON.parse(e.data); if (d.rebuild) showRebuild(d.rebuild); else { renderStats(d); if (d.rebuild) showRebuild(d.rebuild); } } catch {} };
+es.onmessage = e => { try { const d = JSON.parse(e.data); if ("tracks" in d) renderStats(d); if (d.rebuild) showRebuild(d.rebuild); } catch {} };
 es.onerror = () => { if (lastN === null) $("#tTracks").textContent = "offline"; };
 
 // ---- search -----------------------------------------------------------------

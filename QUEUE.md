@@ -352,3 +352,28 @@ a short notice for a while ("Index rebuilt: 1.2M tracks. Searches are exact
 again for now.") and then goes away. Concise; no jargon; nothing modal. Both
 messages may carry the one honest link to legal.html#scale — a rebuild means
 the site got popular and the Pi is at its limit, which is the coffee case.
+
+
+### BUILT 2026-09-12 — the index looks after itself (server/vindex.py)
+- Exact float32 matmul while n ≤ 150k. Beyond: faiss IVF-PQ (64-byte codes,
+  nlist = 2√n clamped 256..2048, nprobe = nlist/8 ≥ 32), 1000 candidates
+  re-ranked EXACTLY from the fp16 memmap (vectors.f16, row i = ids[i]). The
+  library median for confidence comes from a fixed 5k-vector sample.
+- Rebuild = automatic, event-driven: added_since_build > max(20k, 10% of
+  built) → background thread (faiss on 2 threads), trains on ≤120k rows, adds
+  in 20k chunks, publishes progress over /api/events, swaps atomically, saves
+  index.faiss + index.json so restarts don't retrain (rows added after the
+  save are inserted incrementally). Until the first build lands the server
+  answers by exact chunked scan of the memmap ("scan" mode).
+- Slow second pass: GET /api/search?exact=1 scans every row in 50k chunks and
+  yields (503 "busy") whenever a normal search is in flight. The page calls it
+  after any answer with exact:false and refines the list under a spinner.
+- Banner: rebuild running (progress + ETA) → "Index rebuilt: N tracks" for
+  90 s → gone. Failure shows for 60 s and searching continues on the old index.
+- Measured: local 300k realistic set (real CLAP seeds perturbed, 22 real text
+  queries): recall@10 vs exact 0.995 (min 0.9), IVF search 4 ms median, exact
+  scan 0.26 s, rebuild on +12% fired. First attempt (4√n lists, 24 probes,
+  heavy-noise synthetic data) measured 0.17 — the data was structureless and
+  the probes too few; both fixed. Startup loader streams rows (a million bytes
+  objects at once would have blown the 1.5 GB cap).
+- Pi proof at 600k inside the capped container: see the line below.
