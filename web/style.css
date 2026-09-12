@@ -111,3 +111,6 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 
 .tagcol { display: flex; flex-direction: column; gap: 6px; align-items: flex-end }
 .tag.via { background: var(--b); color: var(--ink); }
+
+.how { margin: 10px 2px 0; font-size: 13px; color: var(--ink2) } .how b { color: var(--ink); font-weight: 600 }
+.similar-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px } .similar-head .ghost { margin-left: auto }

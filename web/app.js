@@ -22,6 +22,10 @@ const EXAMPLES = [
   "psychedelic surf funk trio, reverb guitar, no vocals",
   "trap song with a flute melody and a whispered chorus",
   "drum and bass with a soulful female vocal and a liquid bassline",
+  "the one that goes: we're up all night to get lucky",
+  "royksopp eple",
+  "female vocals, acoustic guitar, whistling in the intro, sounds like 2010",
+  "instrumental, plucked synth melody, slow hip hop drums, warm bass",
 ];
 $("#q").placeholder = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -158,6 +162,16 @@ function swapResults(results) {
     }
   }, leaving.length ? 350 : 0);
 }
+// "More like this": the track's own vector as the query — browsing by sound.
+$("#res").addEventListener("click", async e => {
+  const b = e.target.closest(".morelike"); if (!b) return;
+  const row = b.closest(".hit"), title = row.querySelector(".t").textContent.replace(/^\d+/, "").trim(), artist = row.querySelector(".s").textContent.trim();
+  const r = await fetch("/api/similar/" + b.dataset.id).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (!r) return;
+  cur = null; sentinel();
+  $("#res").innerHTML = `<div class="similar-head"><span class="k">More like</span><b>${esc(title)}</b><span class="s">${esc(artist)}</span></div>`;
+  appendResults(r.results, 0); window.scrollTo({ top: $("#res").getBoundingClientRect().top + scrollY - 90, behavior: "smooth" });
+});
 // "What the index hears": the track's vector read back as the phrases it sits
 // closest to — the words that would find it. Fetched on demand, per track.
 $("#res").addEventListener("click", async e => {
@@ -168,7 +182,7 @@ $("#res").addEventListener("click", async e => {
   if (!box.dataset.loaded) {
     box.innerHTML = '<span class="spin"></span>'; box.hidden = false;
     const d = await fetch("/api/describe/" + b.dataset.id).then(r => r.ok ? r.json() : null).catch(() => null);
-    box.innerHTML = d ? d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + '<span class="chipnote">Try these words in a search — this is how the model describes the sound.</span>' : "couldn't load"; box.dataset.loaded = "1";
+    box.innerHTML = d ? d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + `<span class="chipnote">The words the model associates with this track — the closest it gets to describing the sound. A search made of them lands in the neighbourhood, not necessarily on top: the index can tell a category apart, not one track in it from thirty like it. <button type="button" class="ghost morelike" data-id="${b.dataset.id}">More like this</button></span>` : "couldn't load"; box.dataset.loaded = "1";
   }
   box.hidden = false;
 });

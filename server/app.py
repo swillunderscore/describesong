@@ -395,6 +395,25 @@ def name_hits(q, limit=10):
         except Exception: return []
     return [(r["rowid"], float(r["r"])) for r in rows]
 
+@app.get("/api/similar/{tid}")
+def similar(tid: int, request: Request, k: int = 30):
+    """Tracks nearest to THIS track's vector — browsing by sound, and the honest
+    demonstration of what the index can and cannot tell apart."""
+    ratelimit(client_ip(request), 3000)
+    with db() as c:
+        row = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
+    if not row: raise HTTPException(404, "no such track")
+    v = np.frombuffer(row["vec"], np.float16).astype(np.float32)
+    INDEX.busy += 1
+    try: ids, scores, med, is_exact = INDEX.search(v, k=max(1, min(k, 100)) + 1)
+    finally: INDEX.busy -= 1
+    pairs = [(t, float(sc)) for t, sc in zip(ids, scores) if t != tid][:k]
+    with db() as c:
+        rows = {r["id"]: r for r in c.execute("SELECT * FROM tracks WHERE id IN (%s)" % ",".join("?" * len(pairs)), [t for t, _ in pairs])}
+    res = [{"id": int(t), "artist": rows[t]["artist"], "title": rows[t]["title"], "album": rows[t]["album"], "verified": bool(rows[t]["verified"]), "via": "sound",
+            "score": round(sc, 4), "confidence": int(round(100 * max(0.0, min(1.0, sc))))} for t, sc in pairs if t in rows]
+    return {"results": res, "exact": bool(is_exact), "count": int(INDEX.n)}
+
 def stats_dict():
     with db() as c:
         t = c.execute("SELECT COUNT(*) n, SUM(verified) v, SUM(created > ?) w FROM tracks", (time.time() - 7 * 86400,)).fetchone()
