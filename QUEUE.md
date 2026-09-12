@@ -675,3 +675,22 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   a real click plays Apple's preview (3.9 s in after 4 s, 30 s long).
 - Decided without asking (say if wrong): Apple before Deezer; 6 s duration
   tolerance; 54 px cover; placeholder blocks for rows without art.
+
+### MEASURED 2026-09-12 — can a store's 30-second preview stand in for a full scan?
+- 60 random tracks with both an Apple preview and a full-scan vector. The
+  preview embedded as three 10 s windows (all of it) with CLAP (PyTorch fp32,
+  same weights), compared to the stored full-scan mean (8 windows across the
+  song). Script: scratchpad/measure_preview.py.
+- cosine preview vs full scan: median 0.903, min 0.430. For scale, a track's
+  nearest OTHER track in the index sits at median 0.879 — a preview is about
+  as close to its own song as the closest different song is.
+- queried by the preview vector, the song's own full vector ranks #1 47 %,
+  top-3 80 %, top-10 87 %, median rank 2. The misses are songs whose 30 s
+  slice is not the song (SMUCKERS rank 327, Young Blood 216, Wajatta 14).
+- Verdict: a preview-derived vector is a usable stand-in for ~4 in 5 songs
+  and a wrong one for ~1 in 8. If previews ever seed the index they need
+  their own tier ("from a 30-second preview"), replaced by any full scan.
+  You cannot choose which 30 s a store serves; Apple and Deezer may serve
+  different slices, so two stores could give ~60 s. Not measured.
+- FLAC: verified end to end in the browser (decode, Vorbis-comment tags,
+  fingerprint, embed, submit — 3 s). mp3/flac/wav/m4a/ogg/opus accepted.
