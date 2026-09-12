@@ -145,5 +145,11 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
    them. The boxes read as chrome; the words are the thing. */
 .top > .brand, .top > .stat { background: none !important; padding-left: 0; padding-right: 0 }
 .top > .brand { padding: 6px 0; margin-right: 6px }
-.top > .stat { margin-right: 18px }
+/* A divider between the header items while they share a line. The breakpoint
+   below is where they stack, and the rule is dropped there — there is no way
+   in CSS to ask "did this wrap?", but this header has a fixed three items, so
+   the breakpoint knows. */
+.top > .stat { margin-right: 18px; padding-left: 18px; border-left: 1px solid currentColor; border-left-color: color-mix(in oklab, currentColor 22%, transparent) }
 .top > .brand:where(a):hover { filter: none; opacity: .75 }
+
+@media (max-width: 860px) { .top > .stat { border-left: 0; padding-left: 0; margin-right: 12px } }
