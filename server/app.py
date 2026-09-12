@@ -527,9 +527,17 @@ def describe(tid: int, request: Request):
         seen[g] = seen.get(g, 0) + 1
         out.append({"tag": _vocab.VOCAB[i], "group": g, "score": round(float(s[i]), 4), "pct": int(round(100 * max(0.0, (float(s[i]) - med) / max(1e-6, top - med))))})
         if len(out) >= 12: break
+    # WHERE WOULD THAT WORD PUT IT? The score above is the track's own view; a
+    # searcher needs the other view: type this word, and this track comes Nth
+    # of everything. Exact mode only (one matmul per word over every vector).
+    count = int(INDEX.n)
+    if INDEX.M32 is not None and len(INDEX.M32) == count and count:
+        for o in out:
+            i = _vocab.VOCAB.index(o["tag"]); r = INDEX.M32 @ M[i]
+            o["rank"] = int((r > float(s[i])).sum()) + 1
     with db() as c:
         evs = [{"cls": r["cls"], "prob": round(r["prob"], 2)} for r in c.execute("SELECT cls, prob FROM track_events WHERE track_id=? AND prob >= 0.1 ORDER BY prob DESC LIMIT 12", (tid,)).fetchall()]
-    return {"id": tid, "tags": out, "events": evs}
+    return {"id": tid, "tags": out, "events": evs, "count": count}
 
 # ---- lyrics: hashed trigrams from LRCLIB, text discarded (see lyrics.py) ----
 import lyrics as _lyr

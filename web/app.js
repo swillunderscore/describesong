@@ -132,6 +132,7 @@ function sentinel() {
 }
 const coverHtml = t => t.play ? `<button type="button" class="cover play" data-id="${t.id}" title="30-second preview" aria-label="play a 30-second preview">${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ""}<svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M8 5v14l11-7z"/><path class="bars" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>`
   : t.cover ? `<span class="cover"><img src="${esc(t.cover)}" alt="" loading="lazy"></span>` : `<span class="cover ph"></span>`;
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][n % 10]);
 function rowHtml(t, i, start) {
   return `<article class="blk hit" style="--d:${(i % PAGE) * 20}ms" data-id="${t.id}">
       ${coverHtml(t)}
@@ -214,7 +215,7 @@ $("#res").addEventListener("click", async e => {
   if (!box.dataset.loaded) {
     box.innerHTML = '<span class="spin"></span>'; box.hidden = false;
     const d = await fetch("/api/describe/" + b.dataset.id).then(r => r.ok ? r.json() : null).catch(() => null);
-    box.innerHTML = d ? (d.events && d.events.length ? d.events.map(e => `<span class="chip ev" title="heard by the sound tagger, ${Math.round(e.prob * 100)}%">${esc(e.cls.toLowerCase())}</span>`).join("") + '<span class="chipnote">Heard in the track (sound tagger). Search these words directly.</span>' : "") + d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + `<span class="chipnote">The words the model associates with this track — the closest it gets to describing the sound. A search made of them lands in the neighbourhood, not necessarily on top: the index can tell a category apart, not one track in it from thirty like it. <button type="button" class="ghost morelike" data-id="${b.dataset.id}">More like this</button></span>` : "couldn't load"; box.dataset.loaded = "1";
+    box.innerHTML = d ? (d.events && d.events.length ? d.events.map(e => `<span class="chip ev" title="heard by the sound tagger, ${Math.round(e.prob * 100)}%">${esc(e.cls.toLowerCase())}</span>`).join("") + '<span class="chipnote">Heard in the track (sound tagger). Search these words directly.</span>' : "") + [...d.tags].sort((x, y) => (x.rank || 1e9) - (y.rank || 1e9)).map(t => `<span class="chip" title="${t.group}${t.rank ? ` — typing this word alone puts the track ${ordinal(t.rank)} of ${d.count}` : ""}">${esc(t.tag)} <small>${t.rank ? ordinal(t.rank) : t.pct}</small></span>`).join("") + `<span class="chipnote">${d.tags.some(t => t.rank) ? `Each word with where typing it alone would put this track, out of ${d.count.toLocaleString()}. The low numbers find it; the rest only land in the neighbourhood.` : "The words the model associates with this track — the closest it gets to describing the sound."} <button type="button" class="ghost morelike" data-id="${b.dataset.id}">More like this</button></span>` : "couldn't load"; box.dataset.loaded = "1";
   }
   box.hidden = false;
 });
