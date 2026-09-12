@@ -1,13 +1,79 @@
 // describesong — worker: fingerprint (Chromaprint, WASM) + embedding (CLAP, transformers.js).
 // Receives 48 kHz mono PCM; nothing here touches the network except the model download.
 import init, { fingerprint } from "./wasm/fingerprint_wasm.js";
+import { stft } from "./stft.js";
 import { AutoProcessor, ClapAudioModelWithProjection, AutoModelForAudioClassification, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 
 const MODEL = "Xenova/larger_clap_music_and_speech";
 const WIN_S = 10, MAX_WINDOWS = 8, MOMENTS = 4;
 let proc, model;
 
-let DEVICE = "";
+// ---- MuLan: the other ear, run through ONNX Runtime Web ---------------------
+// Its audio tower is a plain ONNX graph; the one step ORT Web cannot do (the
+// STFT) happens in stft.js just before. See QUEUE.md for the numbers.
+const MULAN = {
+  onnx: "models/mulan_spec_fp16.onnx",
+  // THE WEIGHTS. ORT Web does not fetch a model's external data file on its
+  // own — forget this and you get a bare numeric error with no message. It is
+  // declared here, next to the model, so the two can never drift apart.
+  data: "models/mulan_spec_fp16.onnx.data",
+  windows: 3, rate: 24000, win_s: 10,
+};
+let ort = null, mulan = null, mulanDevice = "";
+async function initMulan(onProgress) {
+  if (mulan) return;
+  if (!ort) ort = await import("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.mjs");
+  ort.env.wasm.numThreads = 1;
+  const order = navigator.gpu ? ["webgpu", "wasm"] : ["wasm"];
+  let last;
+  for (const ep of order) {
+    try {
+      mulan = await ort.InferenceSession.create(MULAN.onnx, {
+        executionProviders: [ep],
+        externalData: [{ path: MULAN.data.split("/").pop(), data: MULAN.data }],
+      });
+      mulanDevice = ep; return;
+    } catch (e) { last = e; console.warn("MuLan on", ep, "failed:", String(e && e.message || e).slice(0, 200)); }
+  }
+  throw new Error("the sound model could not load in this browser: " + String(last && last.message || last).slice(0, 120));
+}
+// 48 kHz -> 24 kHz: the same windowed-sinc low-pass idea as the tagger's, at 2:1.
+const LP24 = (() => { const N = 33, h = new Float32Array(N), fc = 0.23; let s = 0;
+  for (let i = 0; i < N; i++) { const n = i - (N - 1) / 2, v = n === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * n) / (Math.PI * n), w = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (N - 1)); h[i] = v * w; s += h[i]; }
+  for (let i = 0; i < N; i++) h[i] /= s; return h; })();
+function to24k(x) {
+  const n = Math.floor(x.length / 2), y = new Float32Array(n), N = LP24.length, M = (N - 1) / 2;
+  for (let i = 0; i < n; i++) { const c = i * 2; let a = 0; for (let k = 0; k < N; k++) { const j = c + k - M; if (j >= 0 && j < x.length) a += LP24[k] * x[j]; } y[i] = a; }
+  return y;
+}
+// his trial vectors were made from windows at 20/50/80 % — match them exactly,
+// or the 2,035 already seeded would not line up with anything scanned later
+function mulanWindows(pcm24) {
+  const w = MULAN.win_s * MULAN.rate, n = pcm24.length, out = [];
+  for (let i = 0; i < MULAN.windows; i++) {
+    const c = Math.round((0.2 + 0.3 * i) * n);
+    let st = Math.max(0, Math.min(Math.max(0, n - w), c - (w >> 1)));
+    let seg = pcm24.subarray(st, st + w);
+    if (seg.length < w) { const p = new Float32Array(w); p.set(seg); seg = p; }
+    out.push(seg);
+  }
+  return out;
+}
+async function embedMulan(pcm48) {
+  await initMulan();
+  const pcm24 = to24k(pcm48), vecs = [];
+  for (const seg of mulanWindows(pcm24)) {
+    const S = stft(seg);
+    const feed = {}; feed[mulan.inputNames[0]] = new ort.Tensor("float32", S.data, S.dims);
+    const out = await mulan.run(feed);
+    vecs.push(Float32Array.from(out[mulan.outputNames[0]].data));
+  }
+  const mean = new Float32Array(512);
+  for (const v of vecs) { const u = unit(v); for (let i = 0; i < 512; i++) mean[i] += u[i] / vecs.length; }
+  return { mean: unit(mean), moments: vecs.slice(0, MOMENTS).map(unit) };
+}
+
+let DEVICE = "", EAR = "clap";
 // The sound-event tagger: an AudioSet classifier (527 classes). Measured on his
 // own labels: 88-100 % precision on hand claps and whistling, where CLAP was
 // 0-8 %. Loaded on demand the first time a track needs tagging.
@@ -112,7 +178,12 @@ const held = new Map();   // ref -> { pcm, sampleRate } between fingerprint and 
 self.onmessage = async ({ data }) => {
   const { id } = data;
   try {
-    if (data.type === "init") { if (!model) await initModels(); self.postMessage({ id, ok: true, device: DEVICE }); return; }
+    if (data.type === "init") {
+      EAR = data.ear || "clap";
+      if (EAR === "mulan") { await init(); await initMulan(); self.postMessage({ id, ok: true, device: mulanDevice }); return; }
+      if (!model) await initModels();
+      self.postMessage({ id, ok: true, device: DEVICE }); return;
+    }
     if (data.type === "fingerprint") {
       // Step 1, cheap: Chromaprint of the first ~2 minutes (it resamples
       // internally). The PCM is held here so the page can ask the server
@@ -134,6 +205,7 @@ self.onmessage = async ({ data }) => {
       const h = held.get(data.ref); held.delete(data.ref);
       if (!h) throw new Error("no audio held for ref " + data.ref);
       const { pcm, sampleRate } = h;
+      if (EAR === "mulan") { self.postMessage({ id, ...(await embedMulan(pcm)) }); return; }
       const wins = windows(pcm, sampleRate); const vecs = [];
       for (const wv of wins) {
         const inputs = await proc(wv);

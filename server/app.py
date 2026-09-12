@@ -56,7 +56,13 @@ async def _revalidate_static(request, call_next):
         from fastapi.responses import RedirectResponse
         return RedirectResponse("https://" + request.headers.get("host", "describesong.com") + str(request.url.path) + ("?" + request.url.query if request.url.query else ""), status_code=301)
     resp = await call_next(request)
-    if not request.url.path.startswith("/api/"): resp.headers["Cache-Control"] = "no-cache"
+    if request.url.path.startswith("/models/"):
+        # 600 MB of model weights. These are immutable — a new model gets a new
+        # filename — so they are cached hard. no-cache here would mean a
+        # revalidation round trip before every scan, and a re-download whenever
+        # an ETag slipped.
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif not request.url.path.startswith("/api/"): resp.headers["Cache-Control"] = "no-cache"
     if cfv: resp.headers["Strict-Transport-Security"] = "max-age=31536000"
     return resp
 
@@ -227,10 +233,15 @@ def identify(body: IdentifyIn, request: Request):
         known = c.execute("SELECT id, fp_hash, mbid, artist, title, album, verified, submissions FROM tracks WHERE fp_hash=?", (fp_hash,)).fetchone()
     def verified_reply(known):
         # Already in, and verified: nothing a re-submission of the same encode
-        # could add. The client skips the embed (resume from any browser).
-        with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
+        # could add — UNLESS this database has since switched ears, in which
+        # case the track has no vector in the active model's space and the
+        # browser must embed it after all. Without has_vector a model switch
+        # would quietly leave every known track unsearchable.
+        with db() as c:
+            hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
+            hvec = c.execute("SELECT 1 FROM vectors WHERE track_id=? AND kind='mean' AND model=?", (known["id"], ACTIVE)).fetchone() is not None
         return {"fp_hash": known["fp_hash"], "mbid": known["mbid"], "artist": known["artist"], "title": known["title"], "album": known["album"],
-                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"], "has_events": hev, "acoustid": aid}
+                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"], "has_events": hev, "has_vector": hvec, "acoustid": aid}
     mbid = meta = aid = None
     if known and known["mbid"]: return verified_reply(known)
     if ACOUSTID_KEY and acoustid_slot():
@@ -265,11 +276,13 @@ def identify(body: IdentifyIn, request: Request):
     prior = None
     if known and not known["mbid"]:
         prior = {"artist": known["artist"], "title": known["title"], "album": known["album"], "submissions": known["submissions"]}
-    hev = False
+    hev = hvec = False
     if known:
-        with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
+        with db() as c:
+            hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
+            hvec = c.execute("SELECT 1 FROM vectors WHERE track_id=? AND kind='mean' AND model=?", (known["id"], ACTIVE)).fetchone() is not None
     return {"fp_hash": fp_hash, "mbid": mbid, "verified": 1 if mbid else 0, "prior": prior, "acoustid": aid,
-            "known": bool(known), "submissions": known["submissions"] if known else 0, "has_events": hev, **(meta or {})}
+            "known": bool(known), "submissions": known["submissions"] if known else 0, "has_events": hev, "has_vector": hvec, **(meta or {})}
 
 # ---- /submit : identity + vectors, nothing else ----------------------------
 class SubmitIn(BaseModel):

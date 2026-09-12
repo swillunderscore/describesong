@@ -1,6 +1,9 @@
 // describesong — page logic. Search; and "scan a folder": decode → fingerprint
 // → ask the server if it's already in → (embed → submit) — all in the browser.
-const MODEL_ID = "Xenova/larger_clap_music_and_speech@fp16";   // must equal the server's
+// THE EAR IS THE SERVER'S CHOICE, not a constant here. /api/stats says which
+// model this database is built from; scanning with the other one would produce
+// vectors nothing else can be compared to. Falls back to CLAP if stats is old.
+let MODEL_ID = "Xenova/larger_clap_music_and_speech@fp16", EAR = "clap";
 const $ = s => document.querySelector(s);
 
 // A different example every load — the box should read like a real memory,
@@ -56,6 +59,7 @@ function odometer(el, n, prefix) {
 }
 let lastN = null;
 const renderStats = st => {
+  if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; }
   const n = st.tracks || 0;
   odometer($("#odoTracks"), n); odometer($("#odoWeek"), st.week || 0, "+");
   $("#tTracks").textContent = "of ~200M ever released";
@@ -303,7 +307,10 @@ async function scan(all) {
   document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to CLAP now
   const t0 = performance.now();
   $("#status").textContent = "loading model… (the first time downloads 143 MB)";
-  let initr; try { initr = await ask({ type: "init" }); } catch (err) { $("#status").textContent = "model failed to load: " + err.message; scanning = false; $("#stop").hidden = true; delete document.documentElement.dataset.scanning; return; }
+  // ask the server directly rather than trusting whatever the live-stats
+  // stream has sent so far: scanning with the wrong ear wastes the whole run
+  try { const st = await fetch("/api/stats").then(r => r.json()); if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; } } catch {}
+  let initr; try { initr = await ask({ type: "init", ear: EAR }); } catch (err) { $("#status").textContent = "model failed to load: " + err.message; scanning = false; $("#stop").hidden = true; delete document.documentElement.dataset.scanning; return; }
   const backend = initr.device === "webgpu" ? "GPU" : "CPU — no WebGPU in this browser, slower";
   const progress = () => {
     const el = (performance.now() - t0) / 1000, left = done ? el / done * (files.length - done) : 0;
@@ -354,7 +361,11 @@ async function scan(all) {
     const a = await nextA;
     if (i + 1 < files.length) nextA = stageA(files[i + 1]).catch(e => e);
     if (a instanceof Error) { failed++; log(`✗ ${f.name}: ${a.message}`); finishOne(f, false); continue; }
-    if (a.idr.known) {
+    // has_vector false means this database has switched ears since the track
+    // went in: it has no vector in the active model's space, so it must be
+    // embedded again like a new one. Without this a switch would quietly leave
+    // every known track unsearchable.
+    if (a.idr.known && a.idr.has_vector !== false) {
       // Already in. Skip the embed. If the index has no sound events for it yet
       // (scanned before the tagger existed), tag it now and send only that;
       // unverified tracks also offer our tags as a label vote.

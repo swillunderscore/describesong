@@ -903,3 +903,27 @@ MEASURED on a seeded copy of the live database, MuLan serving live searches:
 
 Controls still behave: "aggressive dubstep with huge wobbling bass" -> SAN
 DIEGO VIP, "solo nylon string guitar brazilian" -> Consolação.
+
+### BUILT 2026-09-12 — the browser side. A real scan produced a real MuLan vector.
+- web/stft.js: the step ORT Web has no kernel for. Radix-2 FFT, 1001 frames,
+  92 ms per window. Parameters read off the model, not guessed.
+- worker.js: `initMulan()` declares the weights file IN THE SAME OBJECT as the
+  model path, so the two cannot drift apart — that is the never-forget the user
+  asked for. Tries WebGPU then WASM, and says which it used.
+- 48 kHz -> 24 kHz by windowed-sinc, and windows at 20/50/80 % to match the
+  trial vectors exactly.
+- THE EAR IS THE SERVER'S. app.js no longer hard-codes the model id; it asks
+  /api/stats at the start of every scan. Scanning with the wrong ear would
+  produce vectors nothing can be compared to.
+- BUG FOUND AND FIXED in the process: a known track skipped the embed, so a
+  model switch would have left every existing track with no vector in the new
+  space and silently unsearchable. identify now returns `has_vector` for the
+  ACTIVE model and the scan re-embeds when it is false.
+- VERIFIED end to end: fed the browser a track with no MuLan vector, it loaded
+  the model, embedded it and submitted. **cosine 0.968 vs the PyTorch vector
+  for the same file** — the gap is resampling (Web Audio + our filter vs
+  librosa), and it is far inside the ~0.88 that separates a track from its
+  nearest neighbour. 7 s for the track including the model load.
+
+STILL TO DO before a switch: get the 606 MB model onto the Pi and confirm
+Cloudflare will serve it, then `VIBEFIND_MODEL=mulan` in the service file.
