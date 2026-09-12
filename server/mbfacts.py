@@ -17,6 +17,15 @@ def _get(url):
             return None
     return None
 
+def title_year(artist_id, title):
+    """Earliest release year of ANY recording of this title by this artist. AcoustID
+    often matches the recording id that lives on a 2018 compilation, whose own
+    releases say 2018; the song is from 2001. The title-level minimum is the song's year."""
+    q = 'arid:%s AND recording:"%s"' % (artist_id, title.replace('"', ""))
+    d = _get("https://musicbrainz.org/ws/2/recording?query=%s&limit=25&fmt=json" % urllib.parse.quote(q))
+    years = [int(r["first-release-date"][:4]) for r in (d or {}).get("recordings", []) if r.get("first-release-date", "")[:4].isdigit()]
+    return min(years) if years else None
+
 def recording(mbid):
     d = _get("https://musicbrainz.org/ws/2/recording/%s?inc=releases+genres+tags+artist-credits&fmt=json" % mbid)
     if not d: return None
@@ -26,7 +35,7 @@ def recording(mbid):
     for t in tags:
         if t.lower() not in seen: seen.add(t.lower()); genres.append(t.lower())
     artists = [a["artist"]["id"] for a in d.get("artist-credit", []) if isinstance(a, dict) and a.get("artist", {}).get("id")]
-    return {"year": years[0] if years else None, "genres": genres[:8], "artists": artists}
+    return {"year": years[0] if years else None, "genres": genres[:8], "artists": artists, "title": d.get("title")}
 
 def artist(mbid):
     d = _get("https://musicbrainz.org/ws/2/artist/%s?fmt=json" % mbid)
@@ -54,6 +63,9 @@ class FactsWorker:
             try:
                 self._pace(); rec = recording(mbid)
                 country = None
+                if rec and rec["artists"] and rec.get("title"):
+                    self._pace(); ty = title_year(rec["artists"][0], rec["title"])
+                    if ty and (rec["year"] is None or ty < rec["year"]): rec["year"] = ty
                 if rec:
                     for aid in rec["artists"][:2]:
                         c = self.aget(aid)

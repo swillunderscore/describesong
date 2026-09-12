@@ -361,9 +361,15 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
             tier = {}
             for r in c.execute("SELECT t.id, f.year, f.country, f.script, f.lang, t.lyrics_state FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.id IN (%s)" % ",".join("?" * len(ids)), list(ids)).fetchall():
                 ok = True; known = 0; asked = 0
+                demote = 0
                 if stated["year_from"]:
                     asked += 1
-                    if r["year"]: known += 1; ok = ok and (stated["year_from"] <= r["year"] <= stated["year_to"])
+                    # a wrong year demotes rather than drops: release dates for a recording
+                    # can be a compilation's (Eple came back as 2018), and hiding a track
+                    # for a data error is worse than showing it lower
+                    if r["year"]:
+                        if stated["year_from"] <= r["year"] <= stated["year_to"]: known += 1
+                        else: demote = 1
                 if stated["country"]:
                     asked += 1
                     if r["country"]: known += 1; ok = ok and r["country"] == stated["country"]
@@ -372,7 +378,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                 if stated["instrumental"]:
                     asked += 1
                     if r["lyrics_state"] in ("found", "instrumental"): known += 1; ok = ok and r["lyrics_state"] == "instrumental"
-                if ok: tier[r["id"]] = known          # how many stated facts this track is KNOWN to satisfy
+                if ok: tier[r["id"]] = known - demote          # known matches count up; a contradicting year counts down
         kept = sorted(((t, sc) for t, sc in zip(ids, scores) if t in tier), key=lambda x: (-tier[x[0]], -x[1]))
         if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
     if offset == 0 and not phrases and not any(fields.get(f) for f in ("artist", "title", "album")):

@@ -500,3 +500,9 @@ Facts tie note: "early 2000s … no vocals" ranks a known-2002 track and a
 known-instrumental track equally (each satisfies one stated fact); sound
 breaks the tie. Eple's own facts arrive when the MusicBrainz worker reaches
 it (it was past the cut of the measurement cache).
+- Year source corrected (2026-09-12): AcoustID matched Eple to the recording
+  id on a 2018 compilation, so "first release" said 2018. The worker now also
+  asks MusicBrainz for the earliest release year of any recording of that
+  title by that artist and takes the minimum. A contradicting year DEMOTES a
+  track below the unknowns instead of dropping it; a contradicting known
+  country or script still drops.
