@@ -990,3 +990,37 @@ MEASURED LIVE right after the switch:
   thing they cannot be found by is a description of the sound, until someone
   scans the file again. Fishy fishy is NOT one of them — he guessed it was; it
   has a MuLan vector and ranks #1 for a description of it.
+
+### FIXED 2026-09-12 — Pi memory: 714 MB -> 464 MB, and I had the cause wrong
+I told him ~150 MB. It was 714 MB. The weights were not the problem — they do
+memory-map. ONNX Runtime PRE-PACKS them: it rewrites every weight matrix into
+a CPU-friendly layout at session start, and those copies are anonymous memory.
+`session.disable_prepacking` gives that up (a search takes 5 ms; the trade is
+free) and drops it to 464 MB, stable across repeated searches.
+`enable_cpu_mem_arena = False` changed nothing and was kept anyway as the
+honest setting for this workload. Cap is 1465 MB, so ~1 GB headroom.
+REMAINING: the last ~468 MB is the int8 weights being copied rather than
+mapped. An fp16 text tower would likely map cleanly, but the fp16 conversion
+currently emits a bad Cast node and needs fixing first.
+
+### FIXED 2026-09-12 — 2,271 of 2,276. I matched the wrong way round twice.
+He said it plainly: it is the exact same library. It is, and I had an exact
+identity available and reached for fuzzy name matching instead.
+- What finally worked: every track already has a CLAP vector, and the trial
+  run has CLAP vectors for the same files. Matching those against each other
+  as a ONE-TO-ONE ASSIGNMENT (scipy linear_sum_assignment) resolves what
+  per-row similarity cannot, because each file can serve only one track.
+  Accepted only on agreeing durations AND (cosine >= 0.95, or mutual-best with
+  a >= 0.02 margin). A zero margin with equal duration is a DUPLICATE COPY of
+  the song, not an ambiguity, and is safe to take.
+- That recovered 75. The names it beat show why the name pass failed:
+  ボラーレ for VOLARE, B.S.D. for "Bitch Suck Dick", ファンキー・スタッフ for
+  "Funky Stuff".
+- Eple was NOT in the trial run at all (added to the library afterwards), so
+  MuLan had never heard it. Embedded it directly with PyTorch, same 3-window
+  scheme. The last 5 have no file in that folder and need a rescan.
+- fpcalc is installed but its fingerprint does not match the browser WASM
+  build's, so the stored fp_hash could not be used as the identity. Worth
+  knowing before anyone tries it again.
+- TIMEFRAME: this project is three days old. Nothing here happened "months
+  ago" and I should stop saying it.

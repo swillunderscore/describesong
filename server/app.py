@@ -163,6 +163,18 @@ def text_embed(q: str) -> np.ndarray:
         import onnxruntime as ort
         from transformers import AutoTokenizer
         so = ort.SessionOptions(); so.log_severity_level = 3; so.intra_op_num_threads = 4
+        # MEMORY. Measured on the Pi: the text tower came in at 640 MB resident
+        # against a 1.5 GB container cap, four times what the same model costs
+        # on a workstation. The weights are not the problem — they memory-map.
+        # It is ONNX Runtime PRE-PACKING them: it rewrites every weight matrix
+        # into a CPU-friendly layout at session start, and those copies are
+        # real memory. Turning it off keeps the mapped file and gives up a
+        # little speed on a query that takes 5 ms.
+        so.add_session_config_entry("session.disable_prepacking", "1")
+        # and no arena: it over-allocates for reuse, which is the right trade
+        # for a hot inference loop and the wrong one for five milliseconds of
+        # work per search on a machine with a hard memory cap.
+        so.enable_cpu_mem_arena = False
         if ACTIVE == "mulan":
             path = os.path.join(MODELS_DIR, "mulan_text_int8.onnx")
             if not os.path.exists(path): raise HTTPException(503, "the MuLan text model is not on this server yet")
