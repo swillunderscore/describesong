@@ -120,3 +120,5 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .how code { font-family: var(--font); font-size: 12px; background: rgb(21 21 26 / .10); border-radius: 5px; padding: 1px 5px; color: var(--ink) }
 
 .hit .facts { color: var(--ink3); font-size: 11.5px; margin-left: 6px; letter-spacing: .04em }
+
+.chip.ev { background: var(--b); color: var(--ink) }

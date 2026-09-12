@@ -542,3 +542,26 @@ transformers.js) — storing (class, probability) per track for a curated set
 of searchable events (claps, whistling, saxophone, harmonica, beatboxing,
 church bells, crowd, applause, laughter, …). Query words map to classes and
 act as facts (filter / tier), like year and country. ~50 B per track.
+
+### BUILT 2026-09-12 — sound events (the tagger his labels chose)
+- web/events.json: 91 AudioSet classes worth searching (claps, whistling,
+  applause, cheering, laughter, beatboxing, chant, choir, rapping, male/female
+  singing, ~40 instruments, bells, rain, thunder, sirens, speech, distortion,
+  echo…) and 148 words people type for them.
+- worker.js runs Xenova/ast-finetuned-audioset-10-10-0.4593 (fp16 on WebGPU,
+  q8/WASM fallback) on the same windows as CLAP, 48→16 kHz by a 3-tap
+  low-pass + decimation, sigmoid per class, max over windows, kept ≥ 0.05.
+- Scan flow: new track → events + embed + submit; known track WITHOUT events
+  → events only (mean null) — so re-picking the folder backfills the library
+  at ~0.5 s/track; known WITH events → skipped as before. DONE_KEY bumped to
+  v2 so old "finished" memories don't hide files from the backfill.
+- Server: track_events(track_id, cls, prob); identify returns has_events;
+  submit validates against the class list; search maps words → classes and
+  ranks tracks known to have the sound (prob ≥ 0.15) first — absence never
+  excludes; describe returns the heard events as chips ("Heard in the
+  track"), before the CLAP words.
+- Verified in the browser against a scratch server: "Island Spell" → Whistling
+  0.34 (his label: yes); Kendrick "Bitch, Don't Kill My Vibe" → Rapping 0.32,
+  Speech, and NO clapping (he labelled claps yes; the tagger's recall on that
+  track is nil — precision was what we measured). 16 s for two tracks incl.
+  model load. No console errors.

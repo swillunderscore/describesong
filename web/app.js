@@ -183,7 +183,7 @@ $("#res").addEventListener("click", async e => {
   if (!box.dataset.loaded) {
     box.innerHTML = '<span class="spin"></span>'; box.hidden = false;
     const d = await fetch("/api/describe/" + b.dataset.id).then(r => r.ok ? r.json() : null).catch(() => null);
-    box.innerHTML = d ? d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + `<span class="chipnote">The words the model associates with this track — the closest it gets to describing the sound. A search made of them lands in the neighbourhood, not necessarily on top: the index can tell a category apart, not one track in it from thirty like it. <button type="button" class="ghost morelike" data-id="${b.dataset.id}">More like this</button></span>` : "couldn't load"; box.dataset.loaded = "1";
+    box.innerHTML = d ? (d.events && d.events.length ? d.events.map(e => `<span class="chip ev" title="heard by the sound tagger, ${Math.round(e.prob * 100)}%">${esc(e.cls.toLowerCase())}</span>`).join("") + '<span class="chipnote">Heard in the track (sound tagger). Search these words directly.</span>' : "") + d.tags.map(t => `<span class="chip" title="${t.group}">${esc(t.tag)} <small>${t.pct}</small></span>`).join("") + `<span class="chipnote">The words the model associates with this track — the closest it gets to describing the sound. A search made of them lands in the neighbourhood, not necessarily on top: the index can tell a category apart, not one track in it from thirty like it. <button type="button" class="ghost morelike" data-id="${b.dataset.id}">More like this</button></span>` : "couldn't load"; box.dataset.loaded = "1";
   }
   box.hidden = false;
 });
@@ -211,7 +211,7 @@ $("#stop").onclick = () => { stopRequested = true; $("#stop").textContent = "sto
 // Closing or leaving the tab kills the worker mid-scan. Finished tracks are
 // already on the server (and skipped next time), but ask before losing the rest.
 window.addEventListener("beforeunload", ev => { if (scanning) { ev.preventDefault(); ev.returnValue = ""; } });
-const DONE_KEY = "describesong.done.v1";
+const DONE_KEY = "describesong.done.v2";   // v2: files finished before the sound tagger existed are looked at again (identify is cheap; known tracks with events skip)
 const doneKey = f => `${f.name}|${f.size}|${f.lastModified}`;
 function loadDone() { try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]")); } catch { return new Set(); } }
 function saveDone(set) { try { localStorage.setItem(DONE_KEY, JSON.stringify([...set])); } catch {} }
@@ -268,7 +268,7 @@ async function scan(all) {
   };
   // STAGE B (the GPU, the only serial cost): embed → submit, overlapped with the next A.
   const net = new Set();
-  const finish = async (f, a, r) => {
+  const finish = async (f, a, r, ev) => {
     const { fpr, idr } = a;
     try {
       // AcoustID can know the recording but hand back an empty title/artist;
@@ -284,8 +284,9 @@ async function scan(all) {
           if (ok) label = { artist: idr.prior.artist, title: idr.prior.title, album: idr.prior.album };
         }
       }
-      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, ...facts, mean: r ? r.mean : null, moments: r ? r.moments : [] });
-      if (sub.ok) { if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in — label confirmed)`); }
+      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, ...facts, events: ev || null, mean: r ? r.mean : null, moments: r ? r.moments : [] });
+      const heard = ev ? Object.entries(ev).filter(([, p]) => p >= 0.3).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k]) => k.toLowerCase()).join(", ") : "";
+      if (sub.ok) { if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}${heard ? "  · " + heard : ""}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in${ev ? " — sounds added" + (heard ? ": " + heard : "") : " — label confirmed"})`); }
       else { failed++; log(`✗ ${f.name}: ${sub.detail || "rejected"}`); }
     } catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); }
     finally { finishOne(f); }
@@ -299,17 +300,21 @@ async function scan(all) {
     if (i + 1 < files.length) nextA = stageA(files[i + 1]).catch(e => e);
     if (a instanceof Error) { failed++; log(`✗ ${f.name}: ${a.message}`); finishOne(f); continue; }
     if (a.idr.known) {
-      // Already in. Verified: nothing to add, skip the embed entirely. Unverified:
-      // still skip the embed, but offer our tags as a label vote.
-      known++; await ask({ type: "drop", ref: a.fpr.ref }).catch(() => {});
-      if (a.idr.mbid) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in)`); finishOne(f); }
-      else { const p = finish(f, a, null); net.add(p); p.finally(() => net.delete(p)); }
+      // Already in. Skip the embed. If the index has no sound events for it yet
+      // (scanned before the tagger existed), tag it now and send only that;
+      // unverified tracks also offer our tags as a label vote.
+      known++;
+      let ev = null;
+      if (!a.idr.has_events) { try { ev = (await ask({ type: "events", ref: a.fpr.ref })).events; } catch (err) { log(`✗ ${f.name}: ${err.message}`); } }
+      else await ask({ type: "drop", ref: a.fpr.ref }).catch(() => {});
+      if (a.idr.mbid && !ev) { log(`= ${a.idr.artist || "?"} — ${a.idr.title || f.name} (already in)`); finishOne(f); }
+      else { const p = finish(f, a, null, ev); net.add(p); p.finally(() => net.delete(p)); }
       continue;
     }
-    let r;
-    try { r = await ask({ type: "embed", ref: a.fpr.ref }); }
+    let r, ev = null;
+    try { ev = (await ask({ type: "events", ref: a.fpr.ref, keepHeld: true })).events; r = await ask({ type: "embed", ref: a.fpr.ref }); }
     catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); finishOne(f); continue; }
-    const p = finish(f, a, r); net.add(p); p.finally(() => net.delete(p));
+    const p = finish(f, a, r, ev); net.add(p); p.finally(() => net.delete(p));
     if (net.size >= 4) await Promise.race(net);
   }
   await Promise.all(net);

@@ -1,13 +1,49 @@
 // describesong — worker: fingerprint (Chromaprint, WASM) + embedding (CLAP, transformers.js).
 // Receives 48 kHz mono PCM; nothing here touches the network except the model download.
 import init, { fingerprint } from "./wasm/fingerprint_wasm.js";
-import { AutoProcessor, ClapAudioModelWithProjection, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+import { AutoProcessor, ClapAudioModelWithProjection, AutoModelForAudioClassification, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 
 const MODEL = "Xenova/larger_clap_music_and_speech";
 const WIN_S = 10, MAX_WINDOWS = 8, MOMENTS = 4;
 let proc, model;
 
 let DEVICE = "";
+// The sound-event tagger: an AudioSet classifier (527 classes). Measured on his
+// own labels: 88-100 % precision on hand claps and whistling, where CLAP was
+// 0-8 %. Loaded on demand the first time a track needs tagging.
+const AST = "Xenova/ast-finetuned-audioset-10-10-0.4593";
+let astProc = null, astModel = null, EVENTS = null;
+async function initAst() {
+  if (astModel) return;
+  EVENTS = await (await fetch("events.json")).json();
+  astProc = await AutoProcessor.from_pretrained(AST);
+  try { astModel = await AutoModelForAudioClassification.from_pretrained(AST, { dtype: "fp16", device: DEVICE || "wasm" }); }
+  catch (e) { astModel = await AutoModelForAudioClassification.from_pretrained(AST, { dtype: "q8", device: "wasm" }); }
+}
+// 48 kHz -> 16 kHz: a short low-pass then every third sample. Classification
+// is indifferent to the last dB of the top octave.
+function to16k(x) {
+  const n = Math.floor(x.length / 3), y = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const j = i * 3; y[i] = 0.25 * (x[j - 1] || 0) + 0.5 * x[j] + 0.25 * (x[j + 1] || 0); }
+  return y;
+}
+async function tagEvents(pcm, sampleRate) {
+  await initAst();
+  const wins = windows(pcm, sampleRate); const best = {};
+  const id2label = astModel.config.id2label;
+  for (const wv of wins) {
+    const inputs = await astProc(to16k(wv), { sampling_rate: 16000 });
+    const { logits } = await astModel(inputs);
+    const l = logits.data;
+    for (let i = 0; i < l.length; i++) {
+      const name = id2label[i]; if (!EVENTS.classes.includes(name)) continue;
+      const p = 1 / (1 + Math.exp(-l[i]));
+      if (p > (best[name] || 0)) best[name] = p;
+    }
+  }
+  const out = {}; for (const [k, v] of Object.entries(best)) if (v >= 0.05) out[k] = Math.round(v * 10000) / 10000;
+  return out;
+}
 async function initModels() {
   await init();
   proc = await AutoProcessor.from_pretrained(MODEL);
@@ -60,6 +96,13 @@ self.onmessage = async ({ data }) => {
       self.postMessage({ id, fingerprint: fp, duration: Math.round(pcm.length / sampleRate), ref: id }); return;
     }
     if (data.type === "drop") { held.delete(data.ref); self.postMessage({ id, ok: true }); return; }
+    if (data.type === "events") {
+      // sound events for a held recording; keepHeld leaves the PCM for a following embed
+      const h = held.get(data.ref); if (!h) throw new Error("no audio held for ref " + data.ref);
+      if (!data.keepHeld) held.delete(data.ref);
+      const events = await tagEvents(h.pcm, h.sampleRate);
+      self.postMessage({ id, events }); return;
+    }
     if (data.type === "embed") {
       const h = held.get(data.ref); held.delete(data.ref);
       if (!h) throw new Error("no audio held for ref " + data.ref);

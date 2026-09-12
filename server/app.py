@@ -16,6 +16,8 @@ DATA = os.environ.get("VIBEFIND_DATA", "./data"); os.makedirs(DATA, exist_ok=Tru
 DB = os.path.join(DATA, "describesong.sqlite")
 # ONE model, forever. A vector from anything else is rejected at the door.
 MODEL_ID = "Xenova/larger_clap_music_and_speech@fp16"
+EVENTS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "events.json")))
+EVENT_CLASSES = set(EVENTS["classes"]); EVENT_WORDS = EVENTS["words"]      # word people type -> AudioSet class
 DIM = 512
 ACOUSTID_KEY = os.environ.get("ACOUSTID_KEY", "")        # decision 5: his to register
 UA = "describesong/0.1 (+https://github.com/)"                # name/domain pending
@@ -78,6 +80,8 @@ CREATE TABLE IF NOT EXISTS ratelimit(ip TEXT PRIMARY KEY, window REAL, n INTEGER
 CREATE TABLE IF NOT EXISTS lyric_grams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS track_facts(track_id INTEGER PRIMARY KEY, year INTEGER, genres TEXT, country TEXT, source TEXT, fetched REAL, script TEXT, lang TEXT);
 CREATE TABLE IF NOT EXISTS artists(mbid TEXT PRIMARY KEY, country TEXT, name TEXT);
+CREATE TABLE IF NOT EXISTS track_events(track_id INTEGER NOT NULL, cls TEXT NOT NULL, prob REAL NOT NULL, PRIMARY KEY(track_id, cls)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_events_cls ON track_events(cls, prob);
 CREATE TABLE IF NOT EXISTS lyric_bigrams(track_id INTEGER NOT NULL, gram INTEGER NOT NULL, PRIMARY KEY(gram, track_id)) WITHOUT ROWID;
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(artist, title, album, content='');
 """
@@ -184,8 +188,9 @@ def identify(body: IdentifyIn, request: Request):
     if known and known["mbid"]:
         # Already in, and verified: nothing a re-submission of the same encode
         # could add. The client skips the embed (resume from any browser).
+        with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
         return {"fp_hash": fp_hash, "mbid": known["mbid"], "artist": known["artist"], "title": known["title"], "album": known["album"],
-                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"]}
+                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"], "has_events": hev}
     mbid = meta = None
     if ACOUSTID_KEY and acoustid_slot():
         import urllib.parse, urllib.request
@@ -205,8 +210,11 @@ def identify(body: IdentifyIn, request: Request):
     prior = None
     if known and not known["mbid"]:
         prior = {"artist": known["artist"], "title": known["title"], "album": known["album"], "submissions": known["submissions"]}
+    hev = False
+    if known:
+        with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
     return {"fp_hash": fp_hash, "mbid": mbid, "verified": 1 if mbid else 0, "prior": prior,
-            "known": bool(known), "submissions": known["submissions"] if known else 0, **(meta or {})}
+            "known": bool(known), "submissions": known["submissions"] if known else 0, "has_events": hev, **(meta or {})}
 
 # ---- /submit : identity + vectors, nothing else ----------------------------
 class SubmitIn(BaseModel):
@@ -220,6 +228,7 @@ class SubmitIn(BaseModel):
     mean: list[float] | None = None          # None = label vote only; the recording must already be in
     year: int | None = Field(default=None, ge=1900, le=2100)      # from the file's own tags, if any
     genre: str | None = Field(default=None, max_length=100)
+    events: dict[str, float] | None = None      # AudioSet classes the browser heard, with probabilities
     moments: list[list[float]] = Field(default_factory=list, max_length=4)
 
 def unit(v):
@@ -234,6 +243,11 @@ def submit(body: SubmitIn, request: Request):
     ratelimit(client_ip(request), 6000)
     if body.model != MODEL_ID: raise HTTPException(400, "unsupported model; this database is %s" % MODEL_ID)
     vote_only = body.mean is None; new_track = False
+    events = {}
+    if body.events:
+        for k, v in body.events.items():
+            if k in EVENT_CLASSES and isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0: events[k] = round(float(v), 4)
+        if len(events) > 60: raise HTTPException(400, "too many events")
     mean = None if vote_only else unit(body.mean); moments = [] if vote_only else [unit(m) for m in body.moments]
     now = time.time()
     with db() as c:
@@ -262,7 +276,10 @@ def submit(body: SubmitIn, request: Request):
             if curv is None or lead["votes"] > curv["votes"] or norm_label(lead["artist"], lead["title"]) == norm_label(cur["artist"], cur["title"]):
                 c.execute("UPDATE tracks SET artist=?, title=?, album=? WHERE id=? AND verified=0", (lead["artist"], lead["title"], lead["album"], tid))
         # Vectors: a resubmission averages in (2 KB each; float16 on disk).
-        if vote_only: return {"ok": True, "track_id": tid, "vote": True}
+        if events:
+            c.execute("DELETE FROM track_events WHERE track_id=?", (tid,))
+            c.executemany("INSERT INTO track_events(track_id, cls, prob) VALUES(?,?,?)", [(tid, k, v) for k, v in events.items()])
+        if vote_only: return {"ok": True, "track_id": tid, "vote": True, "events": len(events)}
         old = c.execute("SELECT vec FROM vectors WHERE track_id=? AND kind='mean'", (tid,)).fetchone()
         if old:
             prev = np.frombuffer(old["vec"], np.float16).astype(np.float32); mean = prev + mean; mean /= np.linalg.norm(mean) + 1e-9
@@ -311,7 +328,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
     n = int(INDEX.n); offset = max(0, min(offset, 1000)); k = max(1, min(k, 100)); want = offset + k
     # a stated fact filters AFTER retrieval, so retrieve deep enough that a narrow
     # filter still leaves pages of results ("nineties rap" out of 8 candidates left 3)
-    if stated["year_from"] or stated["country"] or stated["instrumental"]: want = max(want, 400)
+    if stated["year_from"] or stated["country"] or stated["instrumental"] or any(re.search(r"(?<![\w])" + re.escape(w) + r"(?![\w])", free.lower()) for w in EVENT_WORDS): want = max(want, 400)
     if exact:
         # THE SLOW SECOND PASS: every track, from disk, only while nobody else is
         # searching. 503 means "not now" and the page keeps the fast answer.
@@ -352,6 +369,21 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                 for i in order: via[int(INDEX.ids[srt[i]])] = ("lyrics", 0.5 + 0.5 * float(sc[i]))
             else:
                 for t, _ in qh: via[t] = ("lyrics", 1.0)
+    # SOUND EVENTS: words like "hand claps", "whistling", "saxophone" name AudioSet
+    # classes the browser measured per track (measured 2026-09-12 on his labels:
+    # the classifier was 88-100 % right on claps and whistling where CLAP was
+    # 0-8 %). A track known to have the sound ranks up; absence never excludes,
+    # because tracks scanned before the tagger existed have no events stored.
+    want_events = set()
+    for w, cls in EVENT_WORDS.items():
+        if re.search(r"(?<![\w])" + re.escape(w) + r"(?![\w])", free.lower()): want_events.add(cls)
+    if want_events and ids:
+        with db() as c:
+            hits = {}
+            for r in c.execute("SELECT track_id, cls, prob FROM track_events WHERE cls IN (%s) AND prob >= 0.15 AND track_id IN (%s)" % (",".join("?" * len(want_events)), ",".join("?" * len(ids))), [*want_events, *ids]).fetchall():
+                hits[r["track_id"]] = hits.get(r["track_id"], 0) + 1
+        kept = sorted(zip(ids, scores), key=lambda x: (-hits.get(x[0], 0), -x[1]))
+        ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
     if stated["year_from"] or stated["country"] or stated["instrumental"]:
         # STATED FACTS: a track that contradicts one is dropped; the rest rank by how
         # many stated facts they are KNOWN to satisfy, then by sound (otherwise the
@@ -445,7 +477,9 @@ def describe(tid: int, request: Request):
         seen[g] = seen.get(g, 0) + 1
         out.append({"tag": _vocab.VOCAB[i], "group": g, "score": round(float(s[i]), 4), "pct": int(round(100 * max(0.0, (float(s[i]) - med) / max(1e-6, top - med))))})
         if len(out) >= 12: break
-    return {"id": tid, "tags": out}
+    with db() as c:
+        evs = [{"cls": r["cls"], "prob": round(r["prob"], 2)} for r in c.execute("SELECT cls, prob FROM track_events WHERE track_id=? AND prob >= 0.1 ORDER BY prob DESC LIMIT 12", (tid,)).fetchall()]
+    return {"id": tid, "tags": out, "events": evs}
 
 # ---- lyrics: hashed trigrams from LRCLIB, text discarded (see lyrics.py) ----
 import lyrics as _lyr
