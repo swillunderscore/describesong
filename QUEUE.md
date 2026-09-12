@@ -1098,3 +1098,16 @@ silent assumption: if this ever looks wrong in search, this is the reason.
 Angel Russell "No It Isn't So", 공중도둑 "Ahhhh, These Chains!", Gucci Mane
 "Walk With a Waddle", Metro Station "Disco". No file for any of them on this
 machine or the Pi library.
+
+### BROKE AND FIXED 2026-09-12 — I OOM-killed his music player
+At 18:06 the kernel killed homestead-api three times. Cause: this service grew
+to 714 MB during the MuLan switch (ONNX Runtime pre-packing, since fixed) on a
+Pi that also runs llama-server at 1.2 GB, Immich and Navidrome. His desktop
+player's "add from the web" search stopped returning anything because its
+backend was dead, not because the search was broken — YouTube/SoundCloud were
+answering fine the whole time (verified: 12 results, the official audio at
+301 s). It came back on its own restart; his app just needed a retry.
+- The memory cause is fixed (`session.disable_prepacking`, 714 -> 56 MB).
+- AND the container cap is now 900m, down from 1500m, deliberately tight: if
+  this service ever misbehaves again it should be the thing that dies. A
+  search site going down is an annoyance; his player going down is not.
