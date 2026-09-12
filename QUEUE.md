@@ -1046,3 +1046,35 @@ identity available and reached for fuzzy name matching instead.
 - WORTH CHASING SEPARATELY: if AcoustID mislabelled two rows out of 2,276,
   there are probably more. A pass comparing each row's stored label against
   its nearest neighbours would find them.
+
+### AUDITED 2026-09-12 — I checked my own matching and it had real errors in it
+He asked whether I was confident the tracks are what they should be. I was
+not, so I audited instead of asserting. The check: every MuLan vector copied
+from the trial can be traced back to a file, and that file has a CLAP vector
+too — compare it to the track's OWN CLAP vector, which came from the browser
+scanning his actual file. Disagreement means a wrong match.
+
+- 2,270 audited. Median agreement 0.968. **47 (2.1 %) had a better-fitting
+  file than the one they were given.** Resolved by name agreement AND sound
+  agreement together, not either alone:
+  - 2 reassigned: Benny Benassi "Satisfaction" had David Guetta's, and Lil
+    Wayne "Problems" had Petit Biscuit's — both from a title-only fallback in
+    the first pass that never checked the artist. THAT WAS THE BUG.
+  - 3 removed as untrustworthy (Angel Russell, Gucci Mane, Skrillex): the file
+    they had was wrong and nothing in the trial fits them.
+  - 42 kept: a louder-scoring neighbour is not evidence when the filename
+    matches the title exactly.
+- Then I checked my own drops and 2 of 5 were MY error, not bad data:
+  Kendrick's "Bitch, Don't Kill My Vibe (remix)" and Mid-Air Thief's "왜?"
+  (the file is called "Why", the same song translated). Both restored on an
+  exact duration match plus 0.96+ agreement.
+- MORE MISLABELS FOUND, and his explanation fits: the library was converted
+  from Spotify to YouTube downloads, so AcoustID labels and filenames often
+  disagree. Confirmed cases: row 737 "Cudi Montage" is really Fire, row 885
+  "Zoom Zoom" is really Nanã, row 1361 "…(remix)" is really Black Boy Fly.
+  In each the vector now describes the AUDIO, which is what a sound search
+  needs; the label is a separate problem worth its own pass.
+- FINAL: 2,271 of 2,276. The 5 without are Angel Russell "No It Isn't So",
+  공중도둑 "Ahhhh, These Chains!", Gucci Mane "Walk With a Waddle", Metro
+  Station "Disco", Skrillex "Kill EVERYBODY". None has a trustworthy file
+  here; they need a scan of the real folder.
