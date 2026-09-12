@@ -11,7 +11,7 @@ GAP = 1.05
 class Unavailable(Exception):
     """MusicBrainz could not be asked (network, 5xx, rate limit): not the same as
     MusicBrainz saying no. A miss is stored; an error is retried at the next start."""
-BACKOFF = (5, 10, 20, 40, 60)   # MusicBrainz's search answers "busy" (503) often, even at one request a second; it passes in seconds
+BACKOFF = (5, 15, 45)   # MusicBrainz's search answers "busy" (503) often, even at one request a second; usually it passes in seconds
 def _get(url):
     for attempt, wait in enumerate(BACKOFF):
         try:
@@ -74,6 +74,11 @@ class FactsWorker:
     def __init__(self, store, artist_cache_get, artist_cache_put):
         self.q = queue.Queue(); self.store = store; self.aget = artist_cache_get; self.aput = artist_cache_put
         self.pending = set(); self.lock = threading.Lock(); self.last = 0.0
+        # circuit breaker: after three items in a row that MusicBrainz could not
+        # answer, the rest of the queue is marked "error" WITHOUT asking (one probe
+        # in ten still goes out), so an outage does not turn into a day of retries.
+        # Errors come back on the next submission (app.requeue_facts_errors).
+        self.down = 0; self.probe = 0
         threading.Thread(target=self._run, name="mbfacts", daemon=True).start()
     def enqueue(self, tid, mbid):
         if not mbid: return
@@ -95,6 +100,12 @@ class FactsWorker:
     def _run(self):
         while True:
             item = self.q.get(); kind, tid, mbid = item[:3]; tries = item[3] if len(item) > 3 else 0
+            if self.down >= 3:
+                self.probe += 1
+                if self.probe % 10:
+                    self.store(tid, None, [], None, "musicbrainz-name-error" if kind == "name" else "musicbrainz-error")
+                    with self.lock: self.pending.discard(tid)
+                    continue
             try:
                 if kind == "name":
                     artist_name, title = mbid
@@ -103,7 +114,7 @@ class FactsWorker:
                         self._pace(); a = artist_search(artist_name); c = (a or {}).get("country") or ""; self.aput(key, c, artist_name)
                         if a and a.get("id"): self.aput(a["id"], c, a.get("name"))
                     self._pace(); y = name_year(artist_name, title) if title else None
-                    self.store(tid, y, [], c or None, "musicbrainz-name" if (c or y) else "musicbrainz-name-miss")
+                    self.store(tid, y, [], c or None, "musicbrainz-name" if (c or y) else "musicbrainz-name-miss"); self.down = 0
                     with self.lock: self.pending.discard(tid)
                     continue
                 self._pace(); rec = recording(mbid)
@@ -117,8 +128,9 @@ class FactsWorker:
                         if c is None:
                             self._pace(); a = artist(aid); c = (a or {}).get("country") or ""; self.aput(aid, c, (a or {}).get("name"))
                         if c: country = c; break
-                self.store(tid, rec["year"] if rec else None, rec["genres"] if rec else [], country, "musicbrainz" if rec else "musicbrainz-miss")
+                self.store(tid, rec["year"] if rec else None, rec["genres"] if rec else [], country, "musicbrainz" if rec else "musicbrainz-miss"); self.down = 0
             except Unavailable as e:
+                self.down += 1
                 if tries < 2: print("mbfacts: unavailable, requeued", tid, e, flush=True); self.q.put((kind, tid, mbid, tries + 1)); continue
                 print("mbfacts: unavailable, giving up until next start", tid, e, flush=True); self.store(tid, None, [], None, "musicbrainz-name-error" if kind == "name" else "musicbrainz-error")
             except Exception as e:
