@@ -99,6 +99,10 @@ def norm_label(*parts):
 with db() as _c:
     if "lyrics_state" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
         _c.execute("ALTER TABLE tracks ADD COLUMN lyrics_state TEXT DEFAULT 'none'")
+    if "acoustid" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
+        # AcoustID's own id for the recording: a fuzzy match, so two rips of the
+        # same unidentified song share it while their exact fingerprints differ
+        _c.execute("ALTER TABLE tracks ADD COLUMN acoustid TEXT"); _c.execute("CREATE INDEX IF NOT EXISTS idx_tracks_acoustid ON tracks(acoustid)")
     # names index: rebuild from tracks (contentless FTS holds no text of its own)
     if _c.execute("SELECT COUNT(*) FROM tracks_fts").fetchone()[0] != _c.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]:
         _c.execute("DELETE FROM tracks_fts")
@@ -184,20 +188,28 @@ def identify(body: IdentifyIn, request: Request):
     ratelimit(client_ip(request), 6000)    # one per track: a full-speed scan is ~2400/h from one address; the 600 here broke every scan past 600 tracks
     fp_hash = hashlib.sha1(body.fingerprint.encode()).hexdigest()
     with db() as c:
-        known = c.execute("SELECT id, mbid, artist, title, album, verified, submissions FROM tracks WHERE fp_hash=?", (fp_hash,)).fetchone()
-    if known and known["mbid"]:
+        known = c.execute("SELECT id, fp_hash, mbid, artist, title, album, verified, submissions FROM tracks WHERE fp_hash=?", (fp_hash,)).fetchone()
+    def verified_reply(known):
         # Already in, and verified: nothing a re-submission of the same encode
         # could add. The client skips the embed (resume from any browser).
         with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
-        return {"fp_hash": fp_hash, "mbid": known["mbid"], "artist": known["artist"], "title": known["title"], "album": known["album"],
-                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"], "has_events": hev}
-    mbid = meta = None
+        return {"fp_hash": known["fp_hash"], "mbid": known["mbid"], "artist": known["artist"], "title": known["title"], "album": known["album"],
+                "verified": 1, "prior": None, "known": True, "submissions": known["submissions"], "has_events": hev, "acoustid": aid}
+    mbid = meta = aid = None
+    if known and known["mbid"]: return verified_reply(known)
     if ACOUSTID_KEY and acoustid_slot():
         import urllib.parse, urllib.request
         u = ("https://api.acoustid.org/v2/lookup?client=%s&meta=recordings+releasegroups&duration=%d&fingerprint=%s"
              % (ACOUSTID_KEY, body.duration, urllib.parse.quote(body.fingerprint)))
         try:
             d = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=8))
+            # AcoustID's id for the recording, with or without a MusicBrainz link: the
+            # BACKUP identity for what MusicBrainz does not know. 0.9, not 0.5: a
+            # sample can share enough of a fingerprint with its source to score
+            # lower than that, and merging a sample into its original is worse than
+            # two rips of one song staying apart.
+            top = max(d.get("results", []), key=lambda r: r.get("score", 0), default=None)
+            if top and top.get("score", 0) >= 0.9 and top.get("id"): aid = top["id"]
             best = max((r for r in d.get("results", []) if r.get("recordings")), key=lambda r: r.get("score", 0), default=None)
             if best and best.get("score", 0) >= 0.5:
                 rec = best["recordings"][0]; mbid = rec.get("id")
@@ -205,6 +217,13 @@ def identify(body: IdentifyIn, request: Request):
                         "album": (rec.get("releasegroups") or [{}])[0].get("title")}
         except Exception:
             pass
+    if not known and aid:
+        # a different rip of a recording someone already submitted: same identity
+        with db() as c:
+            known = c.execute("SELECT id, fp_hash, mbid, artist, title, album, verified, submissions FROM tracks WHERE acoustid=? ORDER BY verified DESC, submissions DESC LIMIT 1", (aid,)).fetchone()
+        if known:
+            fp_hash = known["fp_hash"]
+            if known["mbid"]: return verified_reply(known)
     # Nothing verified: hand back whatever a previous submitter said, so the
     # client can ask "someone labelled this X — correct?" (decision 6).
     prior = None
@@ -213,7 +232,7 @@ def identify(body: IdentifyIn, request: Request):
     hev = False
     if known:
         with db() as c: hev = c.execute("SELECT 1 FROM track_events WHERE track_id=? LIMIT 1", (known["id"],)).fetchone() is not None
-    return {"fp_hash": fp_hash, "mbid": mbid, "verified": 1 if mbid else 0, "prior": prior,
+    return {"fp_hash": fp_hash, "mbid": mbid, "verified": 1 if mbid else 0, "prior": prior, "acoustid": aid,
             "known": bool(known), "submissions": known["submissions"] if known else 0, "has_events": hev, **(meta or {})}
 
 # ---- /submit : identity + vectors, nothing else ----------------------------
@@ -221,6 +240,7 @@ class SubmitIn(BaseModel):
     model: str
     fp_hash: str = Field(min_length=40, max_length=40)
     mbid: str | None = None
+    acoustid: str | None = Field(default=None, max_length=40)
     duration: int = Field(ge=1, le=36000)
     artist: str | None = Field(default=None, max_length=300)
     title: str | None = Field(default=None, max_length=300)
@@ -254,12 +274,13 @@ def submit(body: SubmitIn, request: Request):
         row = c.execute("SELECT id, mbid, verified FROM tracks WHERE fp_hash=?", (body.fp_hash,)).fetchone()
         if vote_only and row is None: raise HTTPException(400, "label vote for a recording that is not in the database")
         if row is None:
-            c.execute("INSERT INTO tracks(fp_hash, mbid, duration, artist, title, album, verified, submissions, created) VALUES(?,?,?,?,?,?,?,1,?)",
-                      (body.fp_hash, body.mbid, body.duration, body.artist, body.title, body.album, 1 if body.mbid else 0, now))
+            c.execute("INSERT INTO tracks(fp_hash, mbid, acoustid, duration, artist, title, album, verified, submissions, created) VALUES(?,?,?,?,?,?,?,?,1,?)",
+                      (body.fp_hash, body.mbid, body.acoustid, body.duration, body.artist, body.title, body.album, 1 if body.mbid else 0, now))
             tid = c.execute("SELECT id FROM tracks WHERE fp_hash=?", (body.fp_hash,)).fetchone()["id"]
             new_track = True
         else:
             tid = row["id"]; c.execute("UPDATE tracks SET submissions=submissions+1 WHERE id=?", (tid,))
+            if body.acoustid: c.execute("UPDATE tracks SET acoustid=? WHERE id=? AND acoustid IS NULL", (body.acoustid, tid))
             if body.mbid and not row["mbid"]:
                 c.execute("UPDATE tracks SET mbid=?, artist=?, title=?, album=?, verified=1 WHERE id=?", (body.mbid, body.artist, body.title, body.album, tid))
         if not body.mbid and (body.artist or body.title):
@@ -560,9 +581,9 @@ def name_facts(tid):
         else: c.execute("INSERT INTO track_facts(track_id, script, lang, source) VALUES(?,?,?,?)", (tid, sc, lh, "names"))
 with db() as _c:
     for r in _c.execute("SELECT t.id FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE f.track_id IS NULL OR f.script IS NULL AND f.lang IS NULL").fetchall(): name_facts(r["id"])
-    for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR (f.country IS NULL AND f.source='musicbrainz'))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
+    for r in _c.execute("SELECT t.id, t.mbid FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NOT NULL AND (f.source IS NULL OR f.source NOT LIKE 'musicbrainz%' OR f.source LIKE '%-error' OR (f.country IS NULL AND f.source='musicbrainz' AND f.fetched < strftime('%s','now') - 30*86400))").fetchall(): FACTS.enqueue(r["id"], r["mbid"])
     # unidentified tracks: look the artist up by name (country) and the title (year)
-    for r in _c.execute("SELECT t.id, t.artist, t.title FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NULL AND (f.source IS NULL OR f.source IN ('names', 'tags'))").fetchall(): FACTS.enqueue_name(r["id"], r["artist"], r["title"])
+    for r in _c.execute("SELECT t.id, t.artist, t.title FROM tracks t LEFT JOIN track_facts f ON f.track_id=t.id WHERE t.mbid IS NULL AND (f.source IS NULL OR f.source IN ('names', 'tags') OR f.source LIKE '%-error')").fetchall(): FACTS.enqueue_name(r["id"], r["artist"], r["title"])
 print("facts: queued", FACTS.q.qsize())
 
 def lyric_hits(q, limit=30):

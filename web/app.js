@@ -290,7 +290,7 @@ async function scan(all) {
           if (ok) label = { artist: idr.prior.artist, title: idr.prior.title, album: idr.prior.album };
         }
       }
-      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, duration: fpr.duration, ...label, ...facts, events: ev || null, mean: r ? r.mean : null, moments: r ? r.moments : [] });
+      const sub = await post("/api/submit", { model: MODEL_ID, fp_hash: idr.fp_hash, mbid: idr.mbid || null, acoustid: idr.acoustid || null, duration: fpr.duration, ...label, ...facts, events: ev || null, mean: r ? r.mean : null, moments: r ? r.moments : [] });
       const heard = ev ? Object.entries(ev).filter(([, p]) => p >= 0.3).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k]) => k.toLowerCase()).join(", ") : "";
       if (sub.ok) { good = true; if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}${heard ? "  · " + heard : ""}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in${ev ? " — sounds added" + (heard ? ": " + heard : "") : " — label confirmed"})`); }
       else { failed++; log(`✗ ${f.name}: ${sub.detail || "rejected"}`); }

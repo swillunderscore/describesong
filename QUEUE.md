@@ -636,3 +636,20 @@ act as facts (filter / tier), like year and country. ~50 B per track.
   Caucasus and the Maghreb, includes EG; "latin american" includes the
   Spanish/Portuguese/French Caribbean; a stated place still DROPS tracks
   whose known country contradicts it.
+
+### BUILT 2026-09-12 — before friends scan: AcoustID id as backup identity, MusicBrainz errors retried
+- tracks.acoustid: AcoustID's own id for the recording (a fuzzy match), taken
+  when the top lookup result scores ≥ 0.9, with or without a MusicBrainz
+  link. Identify falls back to it when the exact fingerprint hash is unknown,
+  so two rips of one unidentified song become one track; the client submits
+  under the canonical fp_hash the server hands back. 0.9 not 0.5: a sample
+  can share enough of a fingerprint with its source, and merging a sample
+  into its original is the worse error (his call: "backup, not primary").
+- mbfacts: a MusicBrainz network/5xx failure is stored as *-error and retried
+  at the next start; a real miss stays a miss. The "verified but no country"
+  re-check now runs at most every 30 days instead of at every restart (219
+  tracks × 3 requests before anything new got looked up).
+- Pipeline audit on the live index, 2,276 tracks: vectors 2,276, name index
+  2,276, sounds 2,251 (25 heard nothing / failed before the sentinel), lyrics
+  found 1,304 + instrumental 257 + not on LRCLIB 715, year 1,983, country
+  1,770 (+ the 287 name lookups in flight).
