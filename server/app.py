@@ -379,6 +379,11 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
             cond = " AND ".join("%s:%s" % (f, " ".join('"%s"' % t for t in re.findall(r"[^\s\"]+", fields[f]))) for f in ("artist", "title", "album") if fields.get(f))
             try:
                 for r in c.execute("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ? ORDER BY bm25(tracks_fts) LIMIT 100", (cond,)).fetchall(): via.setdefault(r["rowid"], ("name", 1.0))
+                # "artist is mudjunk" when the tags call Mudjunk the album: a name is a
+                # name — if the column the searcher guessed has nothing, try every column
+                if not via:
+                    anycond = " AND ".join('"%s"' % t for f in ("artist", "title", "album") if fields.get(f) for t in re.findall(r"[^\s\"]+", fields[f]))
+                    for r in c.execute("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ? ORDER BY bm25(tracks_fts) LIMIT 100", (anycond,)).fetchall(): via.setdefault(r["rowid"], ("name", 1.0))
             except Exception: pass
         if not via: quoted_miss = quoted_miss or True
     if offset == 0 and phrases:
