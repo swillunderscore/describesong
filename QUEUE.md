@@ -1237,3 +1237,34 @@ from before AcoustID corrected them, or LRCLIB has since added them). 0 were
 rejected on the 12 s duration tolerance — that theory is dead. So ~1 in 8 of
 the 715, about 90 tracks, are free lyrics with no transcription at all. Six
 minutes of lookups at LRCLIB's 0.25 s pacing. DO THIS BEFORE building phase 2.
+
+### BUILT AND PROVEN 2026-09-12 — lyrics heard in the browser, end to end
+Verified on a real track of his that NO lyrics database has: "Wakilisha".
+382 word-triples and 353 word-pairs stored. It is now findable by a typed line.
+The words never left the machine — hashed inside the worker and dropped.
+
+PIECES:
+- web/lyrichash.js: normWords + grams ported from server/lyrics.py. Verified
+  byte-identical against Python on accents, curly apostrophes, [brackets] and
+  stray quotes. If these ever drift, typed lines stop matching transcribed
+  tracks and nothing else would show it.
+- worker.js `lyrics` message: whisper-large-v3-turbo via transformers.js, q4,
+  WebGPU then WASM. Deterministic (do_sample false, temperature 0) — the
+  default sampling fallback gave 32/37/62 % on three runs of one track.
+- /api/needs_lyrics (which of these have no words anywhere) and
+  /api/submit_lyrics (hashes only, never text; never overwrites a real lookup).
+- lyrics_state gains 'heard' so the index never claims a guess is a lookup.
+- app.js hearLyricsPass(): runs AFTER the scan reports done, only on tracks
+  nothing has words for. Stoppable, resumable (describesong.heard.v1).
+
+BUGS THIS TEST CAUGHT, both invisible without a real browser:
+- hearLyricsPass crashed instantly: log() was scoped inside scan(). The catch
+  block ALSO called log(), so it threw again and escaped. The transcription had
+  already succeeded — only the reporting died.
+- The status line still advertised CLAP's "143 MB" hours after the MuLan switch
+  made it 606 MB. Now reads the active ear's size.
+
+OPEN CONCERN — the 606 MB model comes off the PI, not a CDN. cf-cache-status
+was DYNAMIC when measured, so every new scanner pulls it from his upstream at
+~6.7 MB/s (~90 s each). Fine for a few friends, not for a crowd. Worth a
+Cloudflare cache rule or moving the weights to a CDN before it gets busy.
