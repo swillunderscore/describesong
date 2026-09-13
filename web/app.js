@@ -336,7 +336,21 @@ async function scan(all) {
   const skippedKnown = audio.filter(f => doneSet.get(doneKey(f)));   // skipped by sound, may still need words
   const skipped = audio.length - files.length;
   if (skipped) log(`↷ ${skipped} file${skipped === 1 ? "" : "s"} finished earlier — skipped`);
-  if (!files.length) { $("#status").textContent = `Nothing new — all ${audio.length} audio files here were added earlier.`; return; }
+  // NOT A DEAD END. Every file may already be indexed by sound and still have no
+  // words anywhere, so the lyrics pass runs on its own from the fingerprints
+  // remembered last time. Returning here is what made a fully scanned folder
+  // say "nothing new" and do nothing.
+  if (!files.length) {
+    $("#status").textContent = `All ${audio.length} audio files here are already indexed by sound. Checking which have no words…`;
+    const only = new Map();
+    for (const f of skippedKnown) only.set(doneSet.get(doneKey(f)), f);
+    const todo = await lyricsTodo(only);
+    if (!todo.length) { $("#status").textContent = `Nothing to do — all ${audio.length} files are indexed, and every one either has words or has none to find.`; return; }
+    scanning = true; stopRequested = false;
+    await hearLyricsPass(only, todo);
+    scanning = false;
+    return;
+  }
   $("#bar").max = files.length; $("#bar").value = 0;
   let done = 0, sent = 0, ident = 0, failed = 0, known = 0, noEv = 0, current = "";
   const byHash = new Map();          // fp_hash -> File, for the lyrics pass
