@@ -360,7 +360,7 @@ async function scan(all) {
     // the fingerprint module has to exist before anything is fingerprinted —
     // this path used to skip straight past the worker's init and every track
     // failed on __wbindgen_free
-    try { await ask({ type: "ease", ease: (TC.params.ease ?? 60) / 100 }).catch(() => {}); await ask({ type: "init_fp" }); }
+    try { await ask({ type: "init_fp" }); }
     catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
     scanning = true; stopRequested = false;
     await hearLyricsPass(only, todo);
@@ -379,7 +379,6 @@ async function scan(all) {
   // ask the server directly rather than trusting whatever the live-stats
   // stream has sent so far: scanning with the wrong ear wastes the whole run
   try { const st = await fetch("/api/stats").then(r => r.json()); if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; } } catch {}
-  await ask({ type: "ease", ease: (TC.params.ease ?? 60) / 100 }).catch(() => {});
   let initr; try { initr = await ask({ type: "init", ear: EAR }); } catch (err) { $("#status").textContent = "model failed to load: " + err.message; scanning = false; $("#stop").hidden = true; delete document.documentElement.dataset.scanning; return; }
   const backend = initr.device === "webgpu" ? "GPU" : "CPU — no WebGPU in this browser, slower";
   // say what actually happened, not what was available. The banner above is a

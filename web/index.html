@@ -25,7 +25,6 @@
   <label>Brightness <input id="tcV" type="range" min="30" max="100" step="1"><output id="tcVo"></output></label>
   <label class="chk"><input id="w_enabled" type="checkbox"> <span>Water</span></label>
   <label>Quality <input id="w_quality" type="range" min="-1" max="3" step="1"><output></output></label>
-  <label title="How hard a scan leans on the graphics card. Lower it if your desktop stutters while scanning.">Scan effort <input id="tcEase" type="range" min="20" max="100" step="5"><output id="tcEaseO"></output></label>
   <span class="k2" id="tcNote"></span>
   <button type="button" id="tcMore" class="ghost">I like settings</button>
   <div id="tcMoreBody" hidden>
@@ -70,6 +69,7 @@
       <li><b>Wrong folder?</b> Non-audio files are ignored, and there's a Stop button.</li>
       <li><b>Obscure stuff welcome.</b> Tracks the fingerprint database doesn't know are kept with your tags.</li>
       <li><b>Two passes, one bar.</b> Sound first, then the words for songs no lyrics site has. Stop whenever.</li>
+      <li><b>It uses the whole graphics card.</b> Games and video will stutter while it runs, and a big library takes hours. Worth starting when you're done with the computer for the day.</li>
     </ul>
     <div id="prog" hidden><span class="ring big" id="rScan" style="--p:0"><span id="nScan">0%</span></span><div id="status"></div><progress id="bar" value="0" max="1"></progress>
       <button id="stop" class="ghost" hidden>Stop</button>

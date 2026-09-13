@@ -1385,3 +1385,18 @@ every deploy is a genuinely new URL. VERIFIED: stamp went 6aff3e0-dirty ->
    ever been run. Now says so plainly.
 VERIFIED LIVE: MuQ-MuLan and CC-BY-NC-4.0 present; LAION CLAP, CC0 and "half a
 million" gone. Markup balanced, no unclosed tags.
+
+### REVERTED 2026-09-13 — the scan-effort slider. It could not work.
+A GPU runs at 100 % whenever it runs at all; there is no priority, quota or
+"use 70 % of the card" anywhere in WebGPU. Spacing the bursts out changed how
+OFTEN the card was pinned, never how hard, so the desktop still stuttered and
+the job just took longer. His call, and the right one: leave it at full power
+and SAY SO.
+- Slider, the `ease` worker message and all its plumbing: removed.
+- The 30 s segments STAY. Nothing to do with pacing — they keep Stop
+  responsive, and because the words end up a set of hashes, the 5 s overlap
+  between segments costs nothing.
+- New line in the scan panel: "It uses the whole graphics card. Games and
+  video will stutter while it runs, and a big library takes hours. Worth
+  starting when you're done with the computer for the day."
+VERIFIED after the change: 10 words heard on a real track, no console errors.

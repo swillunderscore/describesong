@@ -8,7 +8,7 @@ const root = document.documentElement, cv = document.getElementById("wp"), ctx =
 const CELL = 6, BAYER = [[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],[3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],[15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]];
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const KEY = "describesong.tc.v1";
-const P = Object.assign({ h: 0, s: 100, v: 100, drift: true, ease: 60 }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } })());
+const P = Object.assign({ h: 0, s: 100, v: 100, drift: true }, (() => { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } })());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch {} };
 let hue = (Date.now() / 1000 / 240 * 360) % 360;          // same hue for everyone at the same moment
 function oklch(L, C, h) {                                 // -> [r,g,b] 0..255, sRGB
@@ -100,14 +100,5 @@ if (tc) {
     }
   };
   $("tcMore").addEventListener("click", () => { const b = $("tcMoreBody"); b.hidden = !b.hidden; $("tcMore").textContent = b.hidden ? "I like settings" : "Enough settings"; });
-  // how hard a scan may lean on the GPU. 100 = take everything, which makes a
-  // desktop stutter for as long as the scan runs; lower leaves gaps.
-  {
-    const el = $("tcEase"), out = $("tcEaseO");
-    if (el) {
-      el.value = P.ease ?? 60; out.value = (P.ease ?? 60) + "%";
-      el.addEventListener("input", e => { P.ease = +e.target.value; out.value = P.ease + "%"; save(); });
-    }
-  }
   $("tcReset").addEventListener("click", () => { if (window.WATER) { Object.assign(P.water, WATER.defaults); save(); TC.wireWater(); WATER.refresh(); } });
 }
