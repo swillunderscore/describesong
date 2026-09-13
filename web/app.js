@@ -318,7 +318,7 @@ async function scan(all) {
   if (scanning) return;
   const audio = all.filter(f => /\.(mp3|flac|wav|m4a|ogg|opus)$/i.test(f.name));
   $("#prog").hidden = false;
-  const log = m => { $("#log").textContent = (m + "\n" + $("#log").textContent).slice(0, 6000); };
+  // (log lives at module scope — the lyrics pass runs outside this function)
   if (!audio.length) { $("#status").textContent = `No audio files in that folder (${all.length} files looked at). MP3, FLAC, WAV, M4A, OGG or Opus.`; return; }
   // RESUME, two layers: this browser remembers files it finished (name+size+
   // mtime); and the server is asked, by fingerprint, before every embed — so a
@@ -426,6 +426,7 @@ async function scan(all) {
 }
 
 // ---- lyrics for the songs no database has words for -----------------------
+const log = m => { $("#log").textContent = (m + "\n" + $("#log").textContent).slice(0, 6000); };
 const LYR_KEY = "describesong.heard.v1";
 const loadHeard = () => { try { return new Set(JSON.parse(localStorage.getItem(LYR_KEY) || "[]")); } catch { return new Set(); } };
 const saveHeard = s => { try { localStorage.setItem(LYR_KEY, JSON.stringify([...s])); } catch {} };
