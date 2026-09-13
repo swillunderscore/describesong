@@ -291,8 +291,18 @@ $("#stop").onclick = () => { stopRequested = true; $("#stop").textContent = "sto
 window.addEventListener("beforeunload", ev => { if (scanning) { ev.preventDefault(); ev.returnValue = ""; } });
 const DONE_KEY = "describesong.done.v3";   // v2: files finished before the sound tagger existed are looked at again (identify is cheap; known tracks with events skip)
 const doneKey = f => `${f.name}|${f.size}|${f.lastModified}`;
-function loadDone() { try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]")); } catch { return new Set(); } }
-function saveDone(set) { try { localStorage.setItem(DONE_KEY, JSON.stringify([...set])); } catch {} }
+// key -> fp_hash. It used to be a bare list of keys, so a file the sound scan
+// skipped had no known fingerprint and could never be offered to the lyrics
+// pass — which is why a folder of 564 tracks needing words only ever showed a
+// fraction of them. Old lists load as keys with a null hash and gain one the
+// next time that file is seen.
+function loadDone() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DONE_KEY) || "[]");
+    return new Map(Array.isArray(raw) ? raw.map(x => Array.isArray(x) ? x : [x, null]) : Object.entries(raw));
+  } catch { return new Map(); }
+}
+function saveDone(m) { try { localStorage.setItem(DONE_KEY, JSON.stringify([...m])); } catch {} }
 const fmt = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
 // A 429 from the server means "slow down", not "this file failed": wait and retry,
 // and say so in the status line. Any other error carries the server's reason.
@@ -323,6 +333,7 @@ async function scan(all) {
   // scan resumed in another browser, or of a renamed file, skips too.
   const doneSet = loadDone();
   const files = audio.filter(f => !doneSet.has(doneKey(f)));
+  const skippedKnown = audio.filter(f => doneSet.get(doneKey(f)));   // skipped by sound, may still need words
   const skipped = audio.length - files.length;
   if (skipped) log(`↷ ${skipped} file${skipped === 1 ? "" : "s"} finished earlier — skipped`);
   if (!files.length) { $("#status").textContent = `Nothing new — all ${audio.length} audio files here were added earlier.`; return; }
@@ -356,7 +367,7 @@ async function scan(all) {
     $("#status").textContent = `${done} of ${files.length} · ${sent} added (${ident} identified, ${sent - ident} unverified)${known ? ` · ${known} already in` : ""}${failed ? ` · ${failed} failed` : ""} · ${backend} · ${fmt(el)} elapsed${done ? ` · about ${fmt(left)} left` : ""}${current ? `\n${current}` : ""}`;
   };
   // ok=false: the file is finished for this run but NOT remembered as done, so the next pick tries it again
-  const finishOne = (f, ok = true) => { if (ok) { doneSet.add(doneKey(f)); saveDone(doneSet); } $("#bar").value = ++done; progress(); const pct = Math.round(100 * done / files.length); $("#rScan").style.setProperty("--p", pct); $("#nScan").textContent = pct + "%"; };
+  const finishOne = (f, ok = true, hash = null) => { if (ok) { doneSet.set(doneKey(f), hash || doneSet.get(doneKey(f)) || null); saveDone(doneSet); } $("#bar").value = ++done; progress(); const pct = Math.round(100 * done / files.length); $("#rScan").style.setProperty("--p", pct); $("#nScan").textContent = pct + "%"; };
   let confirmChain = Promise.resolve();                       // one dialog at a time
   const confirmSerial = (...a) => (confirmChain = confirmChain.then(() => confirmPrior(...a)));
 
@@ -390,7 +401,7 @@ async function scan(all) {
       if (sub.ok) { good = true; if (r) { sent++; if (idr.mbid) ident++; log(`${idr.mbid ? "✓" : "?"} ${label.artist || "?"} — ${label.title || f.name}${heard ? "  · " + heard : ""}`); } else log(`= ${label.artist || "?"} — ${label.title || f.name} (already in${ev ? " — sounds added" + (heard ? ": " + heard : "") : " — label confirmed"})`); }
       else { failed++; log(`✗ ${f.name}: ${sub.detail || "rejected"}`); }
     } catch (err) { failed++; log(`✗ ${f.name}: ${err.message}`); }
-    finally { finishOne(f, good); }
+    finally { finishOne(f, good, idr && idr.fp_hash); }
   };
   let nextA = stageA(files[0]).catch(e => e);
   for (let i = 0; i < files.length; i++) {
@@ -429,6 +440,7 @@ async function scan(all) {
   delete document.documentElement.dataset.scanning;
   // Ask BEFORE wording the finish line: saying "done" and then starting more
   // work is the thing he objected to, and it needs the answer first.
+  for (const f of skippedKnown) byHash.set(doneSet.get(doneKey(f)), f);   // whole folder, not just this run
   const todo = stopRequested ? [] : await lyricsTodo(byHash);
   $("#status").textContent = `${stopRequested ? "stopped" : (todo.length ? "sounds indexed" : "done")} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
   // PHASE TWO. The index is complete and searchable at this point; everything
