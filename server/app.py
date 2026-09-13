@@ -205,7 +205,17 @@ def client_ip(request: Request) -> str:
     # reachable through the tunnel, so the header cannot be spoofed from outside.
     return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
 
-def ratelimit(ip: str, per_hour: int):
+def ratelimit(ip: str, per_hour: int, bucket: str = "api"):
+    """One counter per address PER BUCKET.
+
+    It used to be one counter per address for everything, so adding music ate
+    the same allowance searching did: a 2,287-track scan is over 4,000 requests,
+    and past 3,000 the search endpoint — capped at 3,000 — started refusing.
+    You could lock yourself out of your own site simply by adding your library.
+    Scanning and searching now have separate allowances and cannot starve one
+    another.
+    """
+    ip = f"{ip}|{bucket}"
     now = time.time()
     with db() as c:
         # Windows older than a day are dead: drop them, so an address is held
@@ -241,7 +251,7 @@ def acoustid_slot(max_wait: float = 6.0) -> bool:
 
 @app.post("/api/identify")
 def identify(body: IdentifyIn, request: Request):
-    ratelimit(client_ip(request), 6000)    # one per track: a full-speed scan is ~2400/h from one address; the 600 here broke every scan past 600 tracks
+    ratelimit(client_ip(request), 6000, "scan")    # one per track: a full-speed scan is ~2400/h from one address; the 600 here broke every scan past 600 tracks
     fp_hash = hashlib.sha1(body.fingerprint.encode()).hexdigest()
     with db() as c:
         known = c.execute("SELECT id, fp_hash, mbid, artist, title, album, verified, submissions FROM tracks WHERE fp_hash=?", (fp_hash,)).fetchone()
@@ -323,7 +333,7 @@ def unit(v):
 
 @app.post("/api/submit")
 def submit(body: SubmitIn, request: Request):
-    ratelimit(client_ip(request), 6000)
+    ratelimit(client_ip(request), 6000, "scan")
     if body.model != MODEL_ID: raise HTTPException(400, "unsupported model; this database is %s" % MODEL_ID)
     vote_only = body.mean is None; new_track = False
     events = {}
@@ -739,7 +749,7 @@ def needs_lyrics(body: dict, request: Request):
     """Which of these recordings has NO words anyone can search? Only tracks
     LRCLIB had nothing for — never ones it answered, never instrumentals,
     never ones a browser has already transcribed."""
-    ratelimit(client_ip(request), 3000)
+    ratelimit(client_ip(request), 3000, "scan")
     hashes = [h for h in (body.get("fp_hashes") or [])[:500] if isinstance(h, str) and len(h) == 40]
     if not hashes: return {"need": []}
     with db() as c:
@@ -755,7 +765,7 @@ def needs_lyrics_by_name(body: dict, request: Request):
     scanner find the handful of tracks that need work without touching the
     audio at all. Returns the index of each match in the list it was sent.
     """
-    ratelimit(client_ip(request), 3000)
+    ratelimit(client_ip(request), 3000, "scan")
     items = (body.get("tracks") or [])[:5000]
     if not items: return {"need": []}
     keys = {}
@@ -775,7 +785,7 @@ def needs_lyrics_by_name(body: dict, request: Request):
 def submit_lyrics(body: LyricsIn, request: Request):
     """Hashes of what a browser heard. NO TEXT — the words never leave the
     machine they were heard on, and a hash cannot be turned back into them."""
-    ratelimit(client_ip(request), 6000)
+    ratelimit(client_ip(request), 6000, "scan")
     fp = body.fp_hash or (hashlib.sha1(body.fingerprint.encode()).hexdigest() if body.fingerprint else None)
     if not fp: raise HTTPException(400, "need a fingerprint or its hash")
     with db() as c:
