@@ -1118,3 +1118,19 @@ NOT CHANGED: homestead-api's 256M limit. Raising it would treat a symptom of a
 cause I do not understand, on a limit with 4x headroom in normal use.
 LESSON: three times in this session I named a cause before checking it. The
 kernel log had the answer in one line and I did not read it first.
+
+### 2026-09-12 — swap moved off the SD card, and describesong's memory protected
+The Pi was NEVER short of RAM — it sits at ~2.8 GB of 8 GB. Every kill today
+came from a cgroup limit set too low, not from the machine filling up. But the
+swap was genuinely broken: 200 MB, 100 % full (156 kB free), and on the SD
+CARD. So there was no cushion at all, and what little there was would have been
+painfully slow and was wearing out the card.
+- 8 GB swapfile on the NVMe (ext4, 600 GB free), priority 10, in /etc/fstab.
+  Enabled live with swapon — NO REBOOT was needed or performed.
+- The SD swapfile is off, deleted, and dphys-swapfile is disabled so it will
+  not come back. Its 190 MB of pages went into RAM, which had 5 GB free.
+- describesong: `--memory-reservation 2g` alongside `--memory 2g`, which on
+  cgroup v2 sets memory.low. Memory below that is protected from reclaim, so
+  under pressure the kernel squeezes Immich and the rest FIRST. His call:
+  "id much prefer for my personal shit to slow down and let describesong
+  always have its 2gb". Verified by reading memory.low back: 2147483648.
