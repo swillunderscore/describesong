@@ -148,6 +148,14 @@ with db() as _c:
 # automatic event-driven rebuilds; a slow exact second pass. See vindex.py.
 from vindex import VectorIndex
 _subs: set = set(); _loop = None
+# Live-count listeners, per address. This stream is the one endpoint with no
+# limit, and a request counter is the wrong tool: each connection is meant to
+# stay open for as long as a tab is, so what matters is HOW MANY are held, not
+# how often they are asked for. Without this, opening connections in a loop is
+# a cheap way to tie the server up.
+_sub_ips: dict = {}
+SUBS_PER_IP = 8        # a person with a lot of tabs, not a script
+SUBS_TOTAL = 400       # a whole-server ceiling regardless of who is asking
 def _rebuild_event(ev): publish({"rebuild": ev})
 # CLAP keeps the unprefixed files it already wrote; a new ear gets its own.
 INDEX = VectorIndex(DATA, on_event=_rebuild_event, prefix="" if ACTIVE == "clap" else ACTIVE + "-")
@@ -895,14 +903,22 @@ def publish(obj):
 def publish_stats(): publish(stats_dict())
 @app.get("/api/events")
 async def events(request: Request):
+    ip = client_ip(request)
+    if len(_subs) >= SUBS_TOTAL: raise HTTPException(503, "too many listeners right now")
+    if _sub_ips.get(ip, 0) >= SUBS_PER_IP: raise HTTPException(429, "too many open connections from this address")
     q: asyncio.Queue = asyncio.Queue(); _subs.add(q)
+    _sub_ips[ip] = _sub_ips.get(ip, 0) + 1
     async def gen():
         try:
             yield "data: %s\n\n" % json.dumps(await asyncio.to_thread(stats_dict))
             while True:
                 try: yield "data: %s\n\n" % await asyncio.wait_for(q.get(), 25)
                 except asyncio.TimeoutError: yield ": ping\n\n"
-        finally: _subs.discard(q)
+        finally:
+            _subs.discard(q)
+            n = _sub_ips.get(ip, 1) - 1
+            if n > 0: _sub_ips[ip] = n
+            else: _sub_ips.pop(ip, None)      # do not accumulate a row per address forever
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
