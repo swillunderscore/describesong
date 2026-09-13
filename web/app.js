@@ -272,6 +272,19 @@ const worker = new Worker("worker.js", { type: "module" });
 const pending = new Map(); let seq = 0;
 worker.onmessage = ({ data }) => { const p = pending.get(data.id); if (!p) return; pending.delete(data.id); data.error ? p.reject(new Error(data.error)) : p.resolve(data); };
 const ask = (msg, tr) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); worker.postMessage({ id, ...msg }, tr || []); });
+// A DEAD WORKER MUST NOT HANG THE PAGE. Nothing was listening for one, so if it
+// crashed — a failed model load, running out of memory on a big file — every
+// outstanding request simply never settled. The scan froze mid-track with no
+// message, and Stop could not help because the loop was awaiting a promise that
+// would never resolve. Now a crash rejects everything waiting, so the track
+// fails, says why, and the run carries on.
+const failAllPending = why => {
+  const err = new Error(why);
+  for (const [, p] of pending) p.reject(err);
+  pending.clear();
+};
+worker.onerror = e => failAllPending("the background worker stopped" + (e && e.message ? ": " + e.message : ""));
+worker.onmessageerror = () => failAllPending("the background worker sent something unreadable");
 
 // Chrome's own folder prompt for <input webkitdirectory> says "upload", which
 // is exactly the wrong word. The File System Access picker says "view files"
