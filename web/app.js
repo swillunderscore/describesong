@@ -469,7 +469,14 @@ const log = m => { $("#log").textContent = (m + "\n" + $("#log").textContent).sl
 // single one. That means this can run on its own, skipping the sound pass
 // entirely, which is what you want when a library is already indexed.
 async function lyricsOnly(audio) {
+  // claim the flag BEFORE the slow tag-reading phase, or two quick clicks both
+  // get past the guard and fight over the worker and the progress bar
+  if (scanning) { $("#status").textContent = "Already working — press Stop first."; return; }
   if (!audio.length) { $("#status").textContent = "No audio files in that folder."; return; }
+  scanning = true; stopRequested = false;
+  try { await lyricsOnlyInner(audio); } finally { scanning = false; $("#stop").hidden = true; }
+}
+async function lyricsOnlyInner(audio) {
   $("#prog").hidden = false;
   $("#status").textContent = `Reading tags from ${audio.length} files to see which have no words…`;
   const tagged = [];
@@ -486,9 +493,7 @@ async function lyricsOnly(audio) {
   // the fingerprint module must exist before anything is fingerprinted
   try { await ask({ type: "init_fp" }); }
   catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
-  scanning = true; stopRequested = false;
   await hearLyricsPass(only, todo);
-  scanning = false;
 }
 
 const LYR_KEY = "describesong.heard.v1";
@@ -518,7 +523,7 @@ async function hearLyricsPass(byHash, todo) {
 async function hearLyricsPassInner(byHash, todo) {
   const heard = loadHeard();
   const base = $("#status").textContent;
-  $("#stop").hidden = false; $("#stop").textContent = "Stop"; stopRequested = false; scanning = true;
+  $("#stop").hidden = false; $("#stop").textContent = "Stop"; scanning = true;
   let n = 0, got = 0, t0 = performance.now();
   $("#bar").max = todo.length; $("#bar").value = 0;
   const tick = () => { $("#bar").value = n; const pct = Math.round(100 * n / todo.length);
@@ -534,8 +539,16 @@ async function hearLyricsPassInner(byHash, todo) {
       const fpr = await ask({ type: "fingerprint", pcm, sampleRate: 48000 }, [pcm.buffer]);
       const res = await ask({ type: "lyrics", ref: fpr.ref });
       if (res.grams && res.grams.length) {
-        const r = await post("/api/submit_lyrics", { fp_hash: h, grams: res.grams, bigrams: res.bigrams, model: "whisper-large-v3-turbo" });
+        // WHICH RECORDING IS THIS, REALLY. `h` came from matching TAGS, and two
+        // different recordings can share an artist and title — a live cut, a
+        // remaster, someone else's upload. Sending the FINGERPRINT instead lets
+        // the server decide from the audio actually in hand, in one request
+        // rather than a separate identify per track.
+        const r = await post("/api/submit_lyrics", { fingerprint: fpr.fingerprint, grams: res.grams, bigrams: res.bigrams, model: "whisper-large-v3-turbo" })
+          .catch(() => null);
         if (r && r.ok && r.grams) { got++; log(`♪ ${f.name}: ${res.words} words heard`); }
+        else if (r && r.skipped) log(`· ${f.name}: already has words, left alone`);
+        else if (!r) log(`· ${f.name}: not a recording the index knows, skipped`);
       } else log(`· ${f.name}: nothing audible to transcribe`);
       heard.add(h); saveHeard(heard);
     } catch (err) {

@@ -722,7 +722,14 @@ def play(tid: int, request: Request):
 
 # ---- lyrics the BROWSER heard, for tracks no database has ------------------
 class LyricsIn(BaseModel):
-    fp_hash: str = Field(min_length=40, max_length=40)
+    # EITHER the hash, OR the fingerprint itself. Sending the fingerprint lets
+    # this endpoint work out the identity on its own, which saves the browser a
+    # separate /api/identify per track. That matters: every endpoint shares one
+    # per-address counter, so a long lyrics run was spending two requests a
+    # track and could push past the SEARCH limit — locking someone out of their
+    # own site while their library transcribed.
+    fp_hash: str | None = Field(default=None, min_length=40, max_length=40)
+    fingerprint: str | None = Field(default=None, max_length=100000)
     grams: list[str] = Field(default_factory=list, max_length=4000)     # decimal strings: JSON has no 64-bit ints
     bigrams: list[str] = Field(default_factory=list, max_length=4000)
     model: str = Field(max_length=80)
@@ -769,8 +776,10 @@ def submit_lyrics(body: LyricsIn, request: Request):
     """Hashes of what a browser heard. NO TEXT — the words never leave the
     machine they were heard on, and a hash cannot be turned back into them."""
     ratelimit(client_ip(request), 6000)
+    fp = body.fp_hash or (hashlib.sha1(body.fingerprint.encode()).hexdigest() if body.fingerprint else None)
+    if not fp: raise HTTPException(400, "need a fingerprint or its hash")
     with db() as c:
-        row = c.execute("SELECT id, lyrics_state FROM tracks WHERE fp_hash=?", (body.fp_hash,)).fetchone()
+        row = c.execute("SELECT id, lyrics_state FROM tracks WHERE fp_hash=?", (fp,)).fetchone()
     if not row: raise HTTPException(404, "unknown recording")
     # never overwrite a real lookup with a guess
     if row["lyrics_state"] in ("found", "instrumental"): return {"ok": True, "skipped": row["lyrics_state"]}

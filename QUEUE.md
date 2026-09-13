@@ -1423,3 +1423,31 @@ No, and the guards already existed:
 - The file list is a SNAPSHOT taken when the folder is picked: files added
   afterwards are invisible until next time; files deleted afterwards fail to
   read and log a ✗ without sending anything.
+
+### FIXED 2026-09-13 — "Only find lyrics" could staple words onto the WRONG track
+He asked what happens if that button is pressed before ever scanning. Two real
+defects, both mine, both found by asking that question:
+
+1. WRONG-RECORDING WRITES. The pass submitted under the fp_hash returned by the
+   TAG match. Two different recordings share an artist and title constantly — a
+   live cut, a remaster, someone else's upload — so the words heard in HIS file
+   would be written onto THAT track. On a folder never scanned, every file is in
+   that position. FIX: /api/submit_lyrics now accepts the FINGERPRINT and works
+   out the identity itself from the audio in hand. Tags only decide which files
+   are worth opening; the audio decides where the words go. A file the index
+   does not know is skipped and says so.
+2. TWO RUNS AT ONCE. scan() guarded itself; lyricsOnly() did not, and even after
+   adding a guard it claimed the flag AFTER the slow tag-reading phase, so two
+   quick clicks both got through and fought over the worker and the progress
+   bar. FIX: the flag is claimed before anything slow, released in a finally.
+
+AND A THIRD, worse, found while testing: EVERY ENDPOINT SHARES ONE PER-ADDRESS
+COUNTER. The first fix above added an /api/identify per track, so a lyrics run
+spent two requests a track. Past 3000 in a window, endpoints capped at 3000 —
+INCLUDING /api/search — start refusing. A long transcription could lock someone
+out of searching their own site. Folding the identity check into submit_lyrics
+puts it back to one request per track. The shared counter is still worth a
+proper look: a big scan is thousands of requests against limits that /api/search
+also lives under.
+VERIFIED after all three: lyrics-only on a single track, sound pass did NOT run,
+10 words heard, no console errors.
