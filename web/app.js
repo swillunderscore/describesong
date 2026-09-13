@@ -360,7 +360,7 @@ async function scan(all) {
     // the fingerprint module has to exist before anything is fingerprinted —
     // this path used to skip straight past the worker's init and every track
     // failed on __wbindgen_free
-    try { await ask({ type: "init_fp" }); }
+    try { await ask({ type: "ease", ease: (TC.params.ease ?? 60) / 100 }).catch(() => {}); await ask({ type: "init_fp" }); }
     catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
     scanning = true; stopRequested = false;
     await hearLyricsPass(only, todo);
@@ -371,7 +371,7 @@ async function scan(all) {
   let done = 0, sent = 0, ident = 0, failed = 0, known = 0, noEv = 0, current = "";
   const byHash = new Map();          // fp_hash -> File, for the lyrics pass
   scanning = true; stopRequested = false; $("#stop").hidden = false; $("#stop").textContent = "Stop";
-  document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to CLAP now
+  document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to the model now
   const t0 = performance.now();
   // the size is the ACTIVE ear's, not a constant: this said 143 MB (CLAP's)
   // for hours after the switch to MuLan, which downloads 606 MB.
@@ -379,6 +379,7 @@ async function scan(all) {
   // ask the server directly rather than trusting whatever the live-stats
   // stream has sent so far: scanning with the wrong ear wastes the whole run
   try { const st = await fetch("/api/stats").then(r => r.json()); if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; } } catch {}
+  await ask({ type: "ease", ease: (TC.params.ease ?? 60) / 100 }).catch(() => {});
   let initr; try { initr = await ask({ type: "init", ear: EAR }); } catch (err) { $("#status").textContent = "model failed to load: " + err.message; scanning = false; $("#stop").hidden = true; delete document.documentElement.dataset.scanning; return; }
   const backend = initr.device === "webgpu" ? "GPU" : "CPU — no WebGPU in this browser, slower";
   // say what actually happened, not what was available. The banner above is a
@@ -498,6 +499,14 @@ async function lyricsTodo(byHash) {
 
 async function hearLyricsPass(byHash, todo) {
   if (!todo || !todo.length) return;
+  // The water pauses on this flag. The scan clears it when the sound pass ends,
+  // which is BEFORE this runs, and the tag-matching path never set it at all —
+  // so the animation was competing with transcription for the GPU both ways.
+  document.documentElement.dataset.scanning = "1";
+  try { return await hearLyricsPassInner(byHash, todo); }
+  finally { delete document.documentElement.dataset.scanning; }
+}
+async function hearLyricsPassInner(byHash, todo) {
   const heard = loadHeard();
   const base = $("#status").textContent;
   $("#stop").hidden = false; $("#stop").textContent = "Stop"; stopRequested = false; scanning = true;

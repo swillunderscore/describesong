@@ -183,16 +183,36 @@ async function initAsr() {
   })().finally(() => { asrReady = null; });
   await asrReady;
 }
+// DO NOT EAT THE WHOLE GPU. Handing the pipeline an entire track is one
+// uninterrupted block of work, which starves the compositor and leaves the
+// desktop stuttering for as long as it runs. WebGPU has no priority or quota
+// setting, so the only lever is how big each piece of work is: the audio goes
+// in 30 s segments and the worker sleeps for a fraction of however long each
+// took. That yields the GPU several times a track instead of once.
+// Overlap between segments costs nothing here — the words become a SET of
+// hashes, so repeating a few across a boundary changes nothing.
+const SEG_S = 30, OVERLAP_S = 5;
+let EASE = 0.6;                       // 1 = take the whole GPU; the page sets it from the slider
 async function hearLyrics(pcm48) {
   await initAsr();
   const y = to16k(pcm48);                       // same 33-tap low-pass the tagger uses
-  const out = await asr(y, {
-    chunk_length_s: 30, stride_length_s: 5, language: "en", task: "transcribe",
-    // deterministic: greedy, no random retry. Measured: the default sampling
-    // fallback gave 32/37/62 % on three runs of ONE track.
-    do_sample: false, num_beams: 1, temperature: 0,
-  });
-  const words = normWords(out && out.text);
+  const step = (SEG_S - OVERLAP_S) * 16000, win = SEG_S * 16000;
+  const parts = [];
+  for (let i = 0; i < y.length; i += step) {
+    const seg = y.subarray(i, i + win);
+    if (seg.length < 16000) break;              // under a second left: nothing to hear
+    const t0 = performance.now();
+    const out = await asr(seg, {
+      language: "en", task: "transcribe",
+      // deterministic: greedy, no random retry. Measured: the default sampling
+      // fallback gave 32/37/62 % on three runs of ONE track.
+      do_sample: false, num_beams: 1, temperature: 0,
+    });
+    parts.push((out && out.text) || "");
+    const took = performance.now() - t0;
+    if (EASE < 1) await new Promise(r => setTimeout(r, Math.min(2000, took * (1 - EASE) / EASE)));
+  }
+  const words = normWords(parts.join(" "));
   const g = await grams(words, 3), g2 = await grams(words, 2);
   return { grams: g, bigrams: g2, words: words.length };   // the text itself is dropped here
 }
@@ -261,6 +281,7 @@ self.onmessage = async ({ data }) => {
       const events = await tagEvents(h.pcm, h.sampleRate);
       self.postMessage({ id, events }); return;
     }
+    if (data.type === "ease") { EASE = Math.max(0.2, Math.min(1, data.ease)); self.postMessage({ id, ok: true }); return; }
     if (data.type === "init_fp") {
       // fingerprinting only. The lyrics pass needs the Chromaprint WASM but not
       // MuLan — loading the 600 MB ear to transcribe words would be absurd.

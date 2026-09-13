@@ -1344,3 +1344,23 @@ FIX: a `init_fp` worker message that loads ONLY the fingerprint WASM (not the
 600 MB ear — pointless for transcribing words), called before the lyrics pass.
 VERIFIED in the browser: init_fp returns ok, and a fingerprint of synthetic PCM
 succeeds afterwards (52 chars, 12 s).
+
+### FIXED 2026-09-13 — the water kept running through the lyrics pass
+Two gaps, one flag. water.js pauses on `documentElement.dataset.scanning`:
+ - the scan CLEARS that flag when the sound pass ends, which is BEFORE the
+   lyrics pass runs, so the animation competed with transcription; and
+ - the tag-matching path never set it at all.
+FIX: hearLyricsPass owns the flag itself (set on entry, cleared in a finally),
+so both callers are covered and the scan cannot clear it underneath.
+VERIFIED in the browser: 18 samples through a real transcription, flag set
+every time, water step counter moved 0.
+
+### FIXED 2026-09-13 — deploys of UNCOMMITTED work never busted the cache
+sync.sh stamped every asset `?v=<commit>-dirty`. That suffix does not CHANGE
+between uncommitted deploys, so deploy after deploy reused one URL and browsers
+kept serving the file from before the change. This is why a correct fix
+appeared not to work and I nearly went chasing it — the new code was on the Pi
+and the browser was running the old one.
+FIX: an uncommitted deploy now stamps `<commit>-<sha1 of web/ contents>`, so
+every deploy is a genuinely new URL. VERIFIED: stamp went 6aff3e0-dirty ->
+6aff3e0-2238a53 and the page picked up the new file immediately.

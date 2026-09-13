@@ -6,7 +6,14 @@
 # stale anywhere. The repo keeps the plain names; only the deployed copy is stamped.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; PI="${PI:?set PI=user@host of the Pi, e.g. PI=pi@raspberrypi.local}"
-V="$(git -C "$ROOT" rev-parse --short HEAD)$(git -C "$ROOT" diff --quiet || echo -dirty)"
+# A bare "-dirty" suffix does not CHANGE between uncommitted deploys, so every
+# such deploy reused one URL and browsers kept serving the previous file. Hours
+# of "the fix did not work" were that. Uncommitted work now gets a stamp derived
+# from the contents, so each deploy is a genuinely new URL.
+V="$(git -C "$ROOT" rev-parse --short HEAD)"
+if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet; then
+  V="$V-$(cat "$ROOT"/web/*.js "$ROOT"/web/*.css "$ROOT"/web/*.html 2>/dev/null | sha1sum | cut -c1-7)"
+fi
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 # models/ is EXCLUDED from staging: it is ~609 MB of weights that need no
 # version stamping, and $T is a mktemp dir — on this machine /tmp is a 16 GB
