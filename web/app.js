@@ -461,6 +461,10 @@ async function hearLyricsPass(byHash, todo) {
   const base = $("#status").textContent;
   $("#stop").hidden = false; $("#stop").textContent = "Stop"; stopRequested = false; scanning = true;
   let n = 0, got = 0, t0 = performance.now();
+  $("#bar").max = todo.length; $("#bar").value = 0;
+  const tick = () => { $("#bar").value = n; const pct = Math.round(100 * n / todo.length);
+    $("#rScan").style.setProperty("--p", pct); $("#nScan").textContent = pct + "%"; };
+  tick();
   const say = extra => { $("#status").textContent = `${base}\n\nNo lyrics exist online for ${todo.length} of these. Listening for the words so they can be found by a line you remember — ${n} of ${todo.length}${got ? `, ${got} now searchable` : ""}. ${extra || "Close the tab whenever; nothing is lost."}`; };
   say("The model downloads once, then it's about ten seconds a track.");
   for (const h of todo) {
@@ -479,7 +483,7 @@ async function hearLyricsPass(byHash, todo) {
       log(`✗ ${f.name}: lyrics — ${err.message}`);
       if (/could not load/i.test(err.message)) break;      // no model: stop, do not grind through every track
     }
-    say(`about ${fmt((performance.now() - t0) / 1000 / Math.max(n, 1) * (todo.length - n))} left`);
+    tick(); say(`about ${fmt((performance.now() - t0) / 1000 / Math.max(n, 1) * (todo.length - n))} left`);
   }
   scanning = false; $("#stop").hidden = true;
   $("#status").textContent = `${base}\n\nLyrics: ${got} of ${todo.length} tracks can now be found by their words.`;

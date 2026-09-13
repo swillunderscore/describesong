@@ -61,14 +61,14 @@
     <h2>Add your music<br>to the <span>index</span></h2>
     <p><b>Nothing is uploaded.</b> Your browser reads the files right here on your computer, identifies each one by fingerprint, and boils it down to a 2&nbsp;KB list of numbers describing how it sounds. Only those numbers and the artist / title / album text are sent. The site has no way to receive audio at all.</p>
     <input id="folder" type="file" webkitdirectory multiple hidden>
-    <button id="pick" class="scan">Scan a music folder<small>Files stay on this computer · about 1.5 s per track on a GPU, then a slower pass for songs with no lyrics online</small></button>
+    <button id="pick" class="scan">Scan a music folder<small>Files stay on this computer · about 1.5 s per track on a GPU</small></button>
     <div id="gpu" class="gpu" hidden></div>
     <ul class="facts">
       <li><b>Leave the tab open.</b> Other tabs are fine; closing this one stops the scan.</li>
       <li><b>Pick up where you left off.</b> Finished tracks are kept and skipped next time — in any browser.</li>
       <li><b>Wrong folder?</b> Non-audio files are ignored, and there's a Stop button.</li>
       <li><b>Obscure stuff welcome.</b> Tracks the fingerprint database doesn't know are kept with your tags.</li>
-      <li><b>Two passes, and the second is optional.</b> First every track gets indexed by sound, which is when searching starts working. Then, for songs no lyrics site has words for — usually a quarter or so of a library — your browser listens and works out the words itself, so a line you remember can find them. That part downloads a second model and takes about ten seconds a track. Stop whenever; everything finished is kept.</li>
+      <li><b>Two passes, one bar.</b> Sound first, then the words for songs no lyrics site has. Stop whenever.</li>
     </ul>
     <div id="prog" hidden><span class="ring big" id="rScan" style="--p:0"><span id="nScan">0%</span></span><div id="status"></div><progress id="bar" value="0" max="1"></progress>
       <button id="stop" class="ghost" hidden>Stop</button>
