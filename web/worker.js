@@ -25,16 +25,37 @@ const MULAN = {
   data: MULAN_REPO + "mulan_spec_fp16.onnx.data",
   windows: 3, rate: 24000, win_s: 10,
 };let ort = null, mulan = null, mulanDevice = "";
+// WE KEEP THE WEIGHTS OURSELVES. Hugging Face answers with `cache-control:
+// no-store` and a signed CDN link that expires, so the browser is forbidden
+// from keeping the 635 MB and re-downloads it on every single visit. Served
+// from the Pi instead, Cloudflare refuses anything over 512 MB. Either way the
+// host decides, and both hosts decide wrong — so the bytes go into the Cache
+// API under our own key and are read from there forever after.
+const MULAN_CACHE = "describesong-mulan-v1";
+async function cachedBytes(url, onProgress) {
+  let cache = null;
+  try { cache = await caches.open(MULAN_CACHE); } catch {}          // private windows have no cache
+  if (cache) {
+    const hit = await cache.match(url).catch(() => null);
+    if (hit) return new Uint8Array(await hit.arrayBuffer());
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`could not fetch ${url.split("/").pop()}: HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  if (cache) { try { await cache.put(url, new Response(buf.slice(0))); } catch {} }   // quota, private mode
+  return new Uint8Array(buf);
+}
 async function initMulan(onProgress) {
   if (mulan) return;
   if (!ort) ort = await import("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.mjs");
   ort.env.wasm.numThreads = 1;
-  const externalData = [{ path: "mulan_spec_fp16.onnx.data", data: MULAN.data }];
+  const [graph, weights] = await Promise.all([cachedBytes(MULAN.onnx), cachedBytes(MULAN.data)]);
+  const externalData = [{ path: "mulan_spec_fp16.onnx.data", data: weights }];
   const order = navigator.gpu ? ["webgpu", "wasm"] : ["wasm"];
   let last;
   for (const ep of order) {
     try {
-      mulan = await ort.InferenceSession.create(MULAN.onnx, { executionProviders: [ep], externalData });
+      mulan = await ort.InferenceSession.create(graph, { executionProviders: [ep], externalData });
       mulanDevice = ep; return;
     } catch (e) { last = e; console.warn("MuLan on", ep, "failed:", String(e && e.message || e).slice(0, 200)); }
   }

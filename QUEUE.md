@@ -1304,3 +1304,20 @@ to log in. Worth doing later.
 GOTCHA: an earlier check reported 404s and I nearly chased a phantom — the
 filenames are long and dot-separated, and the shell had split them. The files
 were fine. Quote them.
+
+### FIXED 2026-09-13 — the model was re-downloading on every single visit
+Both hosting options fail for the same reason: the HOST decides whether the
+browser may keep a 635 MB file, and both hosts decide wrong.
+  - Pi + Cloudflare: nothing over 512 MB is cached below Enterprise, so the
+    edge passed it through from his home connection every time.
+  - Hugging Face: answers `cache-control: no-store` and redirects to a SIGNED
+    CDN link that expires, so the browser is forbidden from keeping it.
+FIX: stop asking. worker.js fetches the bytes once and puts them in the Cache
+API under our own key (describesong-mulan-v1), then hands ORT Web the bytes
+rather than a URL. `externalData` takes a Uint8Array as happily as a string.
+Wrapped in try/catch throughout — a private window has no cache storage and
+must still work, just slower.
+MEASURED, same track, same browser:
+  first visit  16 s   (fetches and stores 635 MB)
+  next visit    1 s   (reads from the cache; no fetch of the weights at all)
+Was 1 m 55 s when the weights came off the Pi uncached.
