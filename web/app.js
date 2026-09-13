@@ -283,7 +283,7 @@ $("#pick").onclick = async () => {
   $("#status").textContent = "reading folder…"; $("#prog").hidden = false; await walk(dir, 0); scan(files);
 };
 $("#folder").addEventListener("change", e => scan([...e.target.files]).finally(() => { e.target.value = ""; }));
-const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|opus)$/i;
+
 $("#pickLyrics").onclick = async () => {
   if (!window.showDirectoryPicker) return $("#folderLyrics").click();
   let dir; try { dir = await window.showDirectoryPicker({ mode: "read", id: "music", startIn: "music" }); } catch { return; }
@@ -293,6 +293,7 @@ $("#pickLyrics").onclick = async () => {
 };
 $("#folderLyrics").addEventListener("change", e => lyricsOnly([...e.target.files].filter(f => AUDIO_RE.test(f.name))).finally(() => { e.target.value = ""; }));
 
+const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|opus)$/i;   // one definition, used by both pickers
 let scanning = false, stopRequested = false;
 $("#stop").onclick = () => { stopRequested = true; $("#stop").textContent = "stopping after the current file…"; };
 // Closing or leaving the tab kills the worker mid-scan. Finished tracks are
@@ -333,7 +334,7 @@ async function post(url, body) {
 
 async function scan(all) {
   if (scanning) return;
-  const audio = all.filter(f => /\.(mp3|flac|wav|m4a|ogg|opus)$/i.test(f.name));
+  const audio = all.filter(f => AUDIO_RE.test(f.name));
   $("#prog").hidden = false;
   // (log lives at module scope — the lyrics pass runs outside this function)
   if (!audio.length) { $("#status").textContent = `No audio files in that folder (${all.length} files looked at). MP3, FLAC, WAV, M4A, OGG or Opus.`; return; }
@@ -449,7 +450,11 @@ async function scan(all) {
     if (net.size >= 4) await Promise.race(net);
   }
   await Promise.all(net);
-  scanning = false; $("#stop").hidden = true; current = "";
+  // The flag STAYS SET across the gap below. Dropping it here left a window —
+  // a network round trip wide — where closing the tab warned about nothing and
+  // a second scan could start on top of this one. It is released once, at the
+  // end, after the lyrics pass has had its turn.
+  $("#stop").hidden = true; current = "";
   delete document.documentElement.dataset.scanning;
   // Ask BEFORE wording the finish line: saying "done" and then starting more
   // work is the thing he objected to, and it needs the answer first.
@@ -459,7 +464,8 @@ async function scan(all) {
   // PHASE TWO. The index is complete and searchable at this point; everything
   // below is extra. Only tracks LRCLIB has NO words for — never an instrumental,
   // never one it answered. Closing the tab here costs nothing.
-  if (todo.length) await hearLyricsPass(byHash, todo);
+  try { if (todo.length) await hearLyricsPass(byHash, todo); }
+  finally { scanning = false; $("#stop").hidden = true; }
 }
 
 // ---- lyrics for the songs no database has words for -----------------------

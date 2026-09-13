@@ -1451,3 +1451,23 @@ proper look: a big scan is thousands of requests against limits that /api/search
 also lives under.
 VERIFIED after all three: lyrics-only on a single track, sound pass did NOT run,
 10 words heard, no console errors.
+
+### FIXED 2026-09-13 — three more, from combing rather than being told
+1. THE SCAN DROPPED ITS RUNNING FLAG TOO EARLY. scan() cleared `scanning`
+   immediately after the sound pass, then made a network round trip to work out
+   which tracks need words before the lyrics pass set it again. In that window
+   beforeunload warned about nothing (close the tab and lose the run silently)
+   and a second scan could start on top of the first. Same class of bug as the
+   one in lyricsOnly. The flag now stays set across the gap and is released once,
+   in a finally, after the lyrics pass.
+2. THE AUDIO-EXTENSION TEST EXISTED TWICE, inline in scan() and as a constant
+   for the lyrics picker. Two copies drift; adding a format to one and not the
+   other means a file the scan accepts the lyrics pass ignores. One definition
+   now.
+3. /api/events (the live-count stream) has NO rate limit at all — every other
+   endpoint has one. It is a long-lived connection per tab, so opening many is
+   a cheap way to tie up the server. NOT FIXED, flagged: it needs a connection
+   cap per address rather than a request counter, which is a different shape
+   from ratelimit() and worth doing deliberately.
+VERIFIED after 1 and 2: full lyrics-only run, 10 words, Stop correctly hidden at
+the end, no console errors, search answering throughout.
