@@ -1286,3 +1286,21 @@ Cloudflare cache rule or moving the weights to a CDN before it gets busy.
   with the EXACT values that were indexed. Two earlier attempts raised and
   rolled back the whole transaction, which is why nothing changed until the
   values were read back first.
+
+### FIXED 2026-09-13 — Cloudflare never cached the model. It was the 512 MB cap.
+His cache rule on /models/ was correct and DID apply: cf-cache-status moved
+DYNAMIC -> MISS. But it stayed MISS forever, so every visit still pulled the
+weights off his home connection.
+CAUSE: Cloudflare will not cache a file larger than 512 MB on Free, Pro or
+Business. The weights were one 635 MB blob, so the edge tried, refused on size,
+and passed it through every time.
+FIX: onnx.save(..., all_tensors_to_one_file=False) -> 383 weight files, largest
+34 MB, all far under the cap. worker.js reads models/split/manifest.json and
+hands every name to ORT Web's externalData. VERIFIED: cf-cache-status HIT on
+repeated fetches.
+Not chosen, and why: hosting on HuggingFace would be cleaner and take the Pi out
+of the path entirely, but there is no HF token on this machine, so it needs him
+to log in. Worth doing later.
+GOTCHA: an earlier check reported 404s and I nearly chased a phantom — the
+filenames are long and dot-separated, and the shell had split them. The files
+were fine. Quote them.

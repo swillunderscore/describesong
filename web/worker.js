@@ -13,11 +13,18 @@ let proc, model;
 // Its audio tower is a plain ONNX graph; the one step ORT Web cannot do (the
 // STFT) happens in stft.js just before. See QUEUE.md for the numbers.
 const MULAN = {
-  onnx: "models/mulan_spec_fp16.onnx",
-  // THE WEIGHTS. ORT Web does not fetch a model's external data file on its
-  // own — forget this and you get a bare numeric error with no message. It is
-  // declared here, next to the model, so the two can never drift apart.
-  data: "models/mulan_spec_fp16.onnx.data",
+  onnx: "models/split/mulan.onnx",
+  // THE WEIGHTS, split across ~383 files. ORT Web does not fetch a model's
+  // external data on its own — forget it and you get a bare numeric error with
+  // no message — so the manifest is declared right here beside the model and
+  // every name in it is handed over at load time.
+  //
+  // WHY SPLIT: Cloudflare will not cache a file over 512 MB on any plan below
+  // Enterprise. As one 606 MB blob it came off the Pi's home connection on
+  // every single visit, cf-cache-status stuck on MISS forever. In pieces
+  // (largest 34 MB) the edge caches all of it.
+  manifest: "models/split/manifest.json",
+  dir: "models/split/",
   windows: 3, rate: 24000, win_s: 10,
 };
 let ort = null, mulan = null, mulanDevice = "";
@@ -25,14 +32,13 @@ async function initMulan(onProgress) {
   if (mulan) return;
   if (!ort) ort = await import("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.mjs");
   ort.env.wasm.numThreads = 1;
+  const names = await (await fetch(MULAN.manifest)).json();
+  const externalData = names.map(n => ({ path: n, data: MULAN.dir + n }));
   const order = navigator.gpu ? ["webgpu", "wasm"] : ["wasm"];
   let last;
   for (const ep of order) {
     try {
-      mulan = await ort.InferenceSession.create(MULAN.onnx, {
-        executionProviders: [ep],
-        externalData: [{ path: MULAN.data.split("/").pop(), data: MULAN.data }],
-      });
+      mulan = await ort.InferenceSession.create(MULAN.onnx, { executionProviders: [ep], externalData });
       mulanDevice = ep; return;
     } catch (e) { last = e; console.warn("MuLan on", ep, "failed:", String(e && e.message || e).slice(0, 200)); }
   }
