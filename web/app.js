@@ -334,7 +334,9 @@ async function scan(all) {
   scanning = true; stopRequested = false; $("#stop").hidden = false; $("#stop").textContent = "Stop";
   document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to CLAP now
   const t0 = performance.now();
-  $("#status").textContent = "loading model… (the first time downloads 143 MB)";
+  // the size is the ACTIVE ear's, not a constant: this said 143 MB (CLAP's)
+  // for hours after the switch to MuLan, which downloads 606 MB.
+  $("#status").textContent = `loading the model… (downloads ${EAR === "mulan" ? "about 600 MB" : "143 MB"} the first time, then it is cached)`;
   // ask the server directly rather than trusting whatever the live-stats
   // stream has sent so far: scanning with the wrong ear wastes the whole run
   try { const st = await fetch("/api/stats").then(r => r.json()); if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; } } catch {}
