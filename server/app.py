@@ -739,6 +739,31 @@ def needs_lyrics(body: dict, request: Request):
         rows = c.execute("SELECT fp_hash FROM tracks WHERE lyrics_state='missing' AND fp_hash IN (%s)" % ",".join("?" * len(hashes)), hashes).fetchall()
     return {"need": [r["fp_hash"] for r in rows]}
 
+@app.post("/api/needs_lyrics_by_name")
+def needs_lyrics_by_name(body: dict, request: Request):
+    """Which of these artist/title pairs has no words anyone can search?
+
+    The fingerprint version of this needs the browser to decode every file
+    first. Tags are read from a few hundred header bytes, so this lets a
+    scanner find the handful of tracks that need work without touching the
+    audio at all. Returns the index of each match in the list it was sent.
+    """
+    ratelimit(client_ip(request), 3000)
+    items = (body.get("tracks") or [])[:5000]
+    if not items: return {"need": []}
+    keys = {}
+    for i, t in enumerate(items):
+        if not isinstance(t, dict): continue
+        k = norm_label(t.get("artist"), t.get("title"))
+        if k: keys.setdefault(k, []).append(i)
+    if not keys: return {"need": []}
+    need = []
+    with db() as c:
+        for row in c.execute("SELECT artist, title, fp_hash FROM tracks WHERE lyrics_state='missing'"):
+            k = norm_label(row["artist"], row["title"])
+            for i in keys.get(k, []): need.append({"i": i, "fp_hash": row["fp_hash"]})
+    return {"need": need}
+
 @app.post("/api/submit_lyrics")
 def submit_lyrics(body: LyricsIn, request: Request):
     """Hashes of what a browser heard. NO TEXT — the words never leave the

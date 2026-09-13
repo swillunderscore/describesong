@@ -1321,3 +1321,17 @@ MEASURED, same track, same browser:
   first visit  16 s   (fetches and stores 635 MB)
   next visit    1 s   (reads from the cache; no fetch of the weights at all)
 Was 1 m 55 s when the weights came off the Pi uncached.
+
+### FIXED 2026-09-13 — a fully scanned library could never reach the lyrics pass
+Two bugs stacked, and the second made the first fix worthless:
+1. The scan returned early on "nothing new", before the lyrics pass ran at all.
+2. The done-list stored only "finished", no fingerprint — so a skipped file had
+   no identity. Storing fingerprints going forward did NOT help an existing
+   list: those files are never re-scanned, so they never gain one. A dead end,
+   not a slow fill. I told him it would fill in over time. It would not have.
+FIX: /api/needs_lyrics_by_name matches artist+title (norm_label) against tracks
+whose lyrics_state is 'missing' and returns the index plus fp_hash. The browser
+reads TAGS only — a few hundred header bytes per file — so nothing is decoded
+just to discover which tracks need work, and stored fingerprints stop mattering.
+Verified live: 1 of 3 matched correctly (needs words / already has them / not
+in the index).

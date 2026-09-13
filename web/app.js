@@ -341,10 +341,21 @@ async function scan(all) {
   // remembered last time. Returning here is what made a fully scanned folder
   // say "nothing new" and do nothing.
   if (!files.length) {
-    $("#status").textContent = `All ${audio.length} audio files here are already indexed by sound. Checking which have no words…`;
-    const only = new Map();
-    for (const f of skippedKnown) only.set(doneSet.get(doneKey(f)), f);
-    const todo = await lyricsTodo(only);
+    // Everything is indexed by sound; some of it may still have no words. Match
+    // by TAGS — a few hundred header bytes per file — so nothing is decoded
+    // just to find out. The stored fingerprints are not needed and most of
+    // these files predate them anyway.
+    $("#status").textContent = `All ${audio.length} audio files here are already indexed by sound. Reading tags to see which have no words…`;
+    const tagged = [];
+    for (const f of audio) { const t = (await readTags(f)) || guessFromName(f.name); tagged.push({ artist: t.artist, title: t.title }); }
+    const byIndex = new Map();
+    for (let i = 0; i < tagged.length; i += 2000) {
+      const r = await post("/api/needs_lyrics_by_name", { tracks: tagged.slice(i, i + 2000) }).catch(() => null);
+      for (const n of (r && r.need) || []) byIndex.set(n.i + i, n.fp_hash);
+    }
+    const heard = loadHeard();
+    const only = new Map(), todo = [];
+    for (const [i, h] of byIndex) { if (!heard.has(h)) { only.set(h, audio[i]); todo.push(h); } }
     if (!todo.length) { $("#status").textContent = `Nothing to do — all ${audio.length} files are indexed, and every one either has words or has none to find.`; return; }
     scanning = true; stopRequested = false;
     await hearLyricsPass(only, todo);
