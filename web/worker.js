@@ -12,28 +12,24 @@ let proc, model;
 // ---- MuLan: the other ear, run through ONNX Runtime Web ---------------------
 // Its audio tower is a plain ONNX graph; the one step ORT Web cannot do (the
 // STFT) happens in stft.js just before. See QUEUE.md for the numbers.
+const MULAN_REPO = "https://huggingface.co/swillsoftware/describesong-mulan/resolve/main/";
 const MULAN = {
-  onnx: "models/split/mulan.onnx",
-  // THE WEIGHTS, split across ~383 files. ORT Web does not fetch a model's
-  // external data on its own — forget it and you get a bare numeric error with
-  // no message — so the manifest is declared right here beside the model and
-  // every name in it is handed over at load time.
-  //
-  // WHY SPLIT: Cloudflare will not cache a file over 512 MB on any plan below
-  // Enterprise. As one 606 MB blob it came off the Pi's home connection on
-  // every single visit, cf-cache-status stuck on MISS forever. In pieces
-  // (largest 34 MB) the edge caches all of it.
-  manifest: "models/split/manifest.json",
-  dir: "models/split/",
+  // HOSTED ON HUGGING FACE, not the Pi. Cloudflare will not cache a file over
+  // 512 MB below Enterprise, so served from home this came off his upstream on
+  // every visit. Hugging Face has no such cap, serves it from a real CDN with
+  // open CORS and range requests, and takes his connection out of the path.
+  onnx: MULAN_REPO + "mulan_spec_fp16.onnx",
+  // THE WEIGHTS. ORT Web does not fetch a model's external data on its own —
+  // forget this and you get a bare numeric error with no message — so it is
+  // declared here beside the model and the two cannot drift apart.
+  data: MULAN_REPO + "mulan_spec_fp16.onnx.data",
   windows: 3, rate: 24000, win_s: 10,
-};
-let ort = null, mulan = null, mulanDevice = "";
+};let ort = null, mulan = null, mulanDevice = "";
 async function initMulan(onProgress) {
   if (mulan) return;
   if (!ort) ort = await import("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.mjs");
   ort.env.wasm.numThreads = 1;
-  const names = await (await fetch(MULAN.manifest)).json();
-  const externalData = names.map(n => ({ path: n, data: MULAN.dir + n }));
+  const externalData = [{ path: "mulan_spec_fp16.onnx.data", data: MULAN.data }];
   const order = navigator.gpu ? ["webgpu", "wasm"] : ["wasm"];
   let last;
   for (const ep of order) {
