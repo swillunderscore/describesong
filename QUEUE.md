@@ -1135,25 +1135,37 @@ painfully slow and was wearing out the card.
   "id much prefer for my personal shit to slow down and let describesong
   always have its 2gb". Verified by reading memory.low back: 2147483648.
 
-### MEASURED 2026-09-12 — vocal separation does NOT rescue lyric transcription. Idea closed.
-The last thing he asked for and the one I had not tested. Same 10 tracks that
-have real LRCLIB lyrics, so there is ground truth. Split the vocals out with
-Demucs (htdemucs, GPU), transcribe ONLY the vocal stem with whisper-small,
-compare hashed word-triples against the real ones. No lyric text stored or
-printed anywhere — only the fraction of hashes that match.
+### MEASURED 2026-09-12 — lyric transcription: three wrong answers, then a real one
+See the entry above this one for the full history. SUPERSEDES the earlier
+"vocal separation does NOT rescue lyric transcription" note, which was drawn
+from non-deterministic measurements.
 
-| approach                  | median overlap | tracks with nothing | s/track |
-|---------------------------|----------------|---------------------|---------|
-| straight transcription     | 26 %           | 2 of 10             |  4.4 |
-| vocals separated first     | **24 %**       | 1 of 10             | 12.0 |
+WHAT WENT WRONG: Whisper's generate() defaults retry with RANDOM SAMPLING when
+unsure — exactly on the passages that decide this. Same track, same settings,
+three runs: 32 %, 37 %, 62 %. Every lyric number before that discovery was
+noise. FIX: do_sample=False, num_beams=1, temperature=0.0, and clear
+logprob_threshold / compression_ratio_threshold / no_speech_threshold.
+Verified: 3 runs, 59 words, 31.2 % each time.
 
-Separation made it slightly WORSE and 3x slower. It rescued one of the two
-tracks that returned nothing and cost accuracy on the rest.
-CONCLUSION: the bottleneck was never the backing music. Whisper is a speech
-model and sung words are its weak case; cleaner vocals do not fix that, and
-stripping the instruments removes context it was using. Adding a second model
-download and 10 s/track to score below a number already judged too low is not
-worth building. CLOSED — do not revisit without a genuinely different model
-(one actually trained on singing), not a better front-end.
-His design constraint, still correct if this is ever reopened: only run it for
-tracks LRCLIB has nothing for (715 of 2,276), never for ones already covered.
+THE REAL RESULT — deterministic, RANDOM sample, 10 songs both ways,
+whisper-small + htdemucs_ft:
+
+| approach             | median | songs with zero matches |
+|----------------------|--------|-------------------------|
+| straight off the mix | 22 %   | 2 of 10 |
+| vocals separated     | 18 %   | 1 of 10 |
+
+Separation helped 4, hurt 5. A wash, and 22 % is below the ~34 % of a typed
+line the search needs. SEPARATION IS SETTLED — do not re-test it.
+
+ALSO WRONG ON THE WAY:
+- "Removing the instruments removes context" — invented, retracted.
+- The ad-lib theory: checked with word frequencies. Reference lyrics are
+  already almost all ordinary words (4 of 5 songs: every triple real words).
+  Filtering vocalisations moved the median 0 points.
+- Hand-picked famous, clearly-sung songs scored 47-61 %. Real but useless —
+  the 715 tracks with no lyrics online are the obscure ones.
+
+UNTESTED, the only lever left: whisper-LARGE. A HuggingFace search found no
+English lyric model with adoption (mostly Vietnamese fine-tunes).
+HIS CONSTRAINT if revisited: only for tracks LRCLIB has nothing for.
