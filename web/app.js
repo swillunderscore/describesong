@@ -164,12 +164,10 @@ async function gpuCheck() {
   const linux = /Linux/.test(ua) && !/Android/.test(ua);
   let adapter = null;
   try { adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null; } catch {}
-  if (adapter) {
-    let name = "";
-    try { const i = await adapter.requestAdapterInfo?.(); name = [i?.vendor, i?.architecture].filter(Boolean).join(" "); } catch {}
-    box.className = "gpu ok";
-    box.innerHTML = `<b>This browser can use your graphics card.</b> That should be about 1.5 seconds a track${name ? ` · ${esc(name)}` : ""}.`;
-  } else {
+  // SAY NOTHING WHEN IT IS FINE. The button already says what a GPU costs; a
+  // banner underneath repeating it was the same fact twice, stacked.
+  if (adapter) { box.hidden = true; return; }
+  {
     const fix = firefox ? "Firefox only has it on Windows so far. Chrome or Edge will do the same scan about twenty times faster."
       : safari ? "Safari added it recently — updating macOS or iOS may be enough. Chrome or Edge will work today."
       : linux ? "On Linux this often needs enabling: open <code>chrome://flags</code>, turn on <b>Unsafe WebGPU Support</b>, and restart the browser."
@@ -346,11 +344,12 @@ async function scan(all) {
   // capability check made before any model loads; this is the truth.
   const gbox = $("#gpu");
   if (gbox) {
-    const onGpu = initr.device === "webgpu";
-    gbox.className = "gpu " + (onGpu ? "ok" : "no");
-    gbox.innerHTML = onGpu ? "<b>Running on your graphics card.</b> About 1.5 seconds a track."
-      : "<b>Running on the processor, not your graphics card.</b> The model could not start on the GPU here, so this will be far slower. Chrome or Edge usually manage it.";
-    gbox.hidden = false;
+    if (initr.device === "webgpu") gbox.hidden = true;      // working as advertised: no need to say so
+    else {
+      gbox.className = "gpu no";
+      gbox.innerHTML = "<b>Running on the processor, not your graphics card.</b> The model could not start on the GPU here, so this will be far slower. Chrome or Edge usually manage it.";
+      gbox.hidden = false;
+    }
   }
   const progress = () => {
     const el = (performance.now() - t0) / 1000, left = done ? el / done * (files.length - done) : 0;
