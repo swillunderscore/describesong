@@ -37,21 +37,31 @@ def strip_synced(s):
     return re.sub(r"^\s*\[\d+:\d+(\.\d+)?\]\s*", "", s or "", flags=re.M)
 
 def fetch_lyrics(artist, title, album=None, duration=None):
-    """-> ('found', text) | ('instrumental', None) | ('missing', None). Never raises."""
-    try:
-        q = {"artist_name": artist, "track_name": title}
-        if album: q["album_name"] = album
-        u = "https://lrclib.net/api/search?" + urllib.parse.urlencode(q)
-        d = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=12))
-        if not d: return "missing", None
-        if duration: d.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
-        best = d[0]
-        if duration and abs((best.get("duration") or 0) - duration) > 12: return "missing", None
-        if best.get("instrumental"): return "instrumental", None
-        text = best.get("plainLyrics") or strip_synced(best.get("syncedLyrics"))
-        return ("found", text) if text and len(text) > 20 else ("missing", None)
-    except Exception:
-        return "missing", None
+    """-> ('found', text) | ('instrumental', None) | ('missing', None). Never raises.
+
+    TWO ATTEMPTS when an album is known. The album disambiguates covers and
+    re-releases, so it is tried first — but it also CAUSES MISSES: tags from
+    a YouTube-sourced library disagree with what LRCLIB has, and a wrong
+    album_name filters the right song out of the results. Measured on 30
+    tracks marked "no lyrics": 0 found with the album sent, 3 found without it.
+    So a miss with the album is retried without it before giving up.
+    """
+    for use_album in ((True, False) if album else (False,)):
+        try:
+            q = {"artist_name": artist, "track_name": title}
+            if use_album: q["album_name"] = album
+            u = "https://lrclib.net/api/search?" + urllib.parse.urlencode(q)
+            d = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=12))
+            if not d: continue
+            if duration: d.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
+            best = d[0]
+            if duration and abs((best.get("duration") or 0) - duration) > 12: continue
+            if best.get("instrumental"): return "instrumental", None
+            text = best.get("plainLyrics") or strip_synced(best.get("syncedLyrics"))
+            if text and len(text) > 20: return "found", text
+        except Exception:
+            continue
+    return "missing", None
 
 class LyricsWorker:
     """One thread, one queue. store(tid, state, trigrams, bigrams) is the caller's DB write."""

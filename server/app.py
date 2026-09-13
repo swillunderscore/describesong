@@ -127,6 +127,8 @@ with db() as _c:
         DROP TABLE vectors; ALTER TABLE vectors_new RENAME TO vectors;
         """)
         print("migrated: vectors now carry the model they came from", flush=True)
+    if "lyrics_checked" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
+        _c.execute("ALTER TABLE tracks ADD COLUMN lyrics_checked REAL")
     if "acoustid" not in [r[1] for r in _c.execute("PRAGMA table_info(tracks)")]:
         # AcoustID's own id for the recording: a fuzzy match, so two rips of the
         # same unidentified song share it while their exact fingerprints differ
@@ -356,7 +358,15 @@ def submit(body: SubmitIn, request: Request):
             cur = c.execute("SELECT artist, title FROM tracks WHERE id=?", (tid,)).fetchone()
             curv = c.execute("SELECT votes FROM labels WHERE track_id=? AND norm=?", (tid, norm_label(cur["artist"], cur["title"]))).fetchone()
             if curv is None or lead["votes"] > curv["votes"] or norm_label(lead["artist"], lead["title"]) == norm_label(cur["artist"], cur["title"]):
+                before = (cur["artist"], cur["title"])
                 c.execute("UPDATE tracks SET artist=?, title=?, album=? WHERE id=? AND verified=0", (lead["artist"], lead["title"], lead["album"], tid))
+                # THE LYRICS WERE LOOKED UP UNDER THE OLD NAME. If the name just
+                # changed, that lookup is worthless — a track marked "no lyrics"
+                # under a wrong artist is not a track without lyrics. Reset it so
+                # the worker asks again with the corrected name. This is why ~1 in
+                # 8 of his 715 "missing" tracks actually had lyrics all along.
+                if before != (lead["artist"], lead["title"]):
+                    c.execute("UPDATE tracks SET lyrics_state='none', lyrics_checked=NULL WHERE id=? AND lyrics_state!='found'", (tid,))
         # Vectors: a resubmission averages in (2 KB each; float16 on disk).
         if events is not None:
             # {} means the tagger listened and heard nothing above threshold; a
@@ -523,7 +533,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                     elif r["script"] and r["script"] != "latin" and not want_script: ok = False
                 if stated["instrumental"]:
                     asked += 1
-                    if r["lyrics_state"] in ("found", "instrumental"): known += 1; ok = ok and r["lyrics_state"] == "instrumental"
+                    if r["lyrics_state"] in ("found", "heard", "instrumental"): known += 1; ok = ok and r["lyrics_state"] == "instrumental"
                 if ok: tier[r["id"]] = known - demote          # known matches count up; a contradicting year counts down
         kept = sorted(((t, sc) for t, sc in zip(ids, scores) if t in tier), key=lambda x: (-tier[x[0]], -x[1]))
         if kept: ids, scores = [t for t, _ in kept], np.array([sc for _, sc in kept], np.float32)
@@ -566,7 +576,7 @@ def search(q: str, request: Request, k: int = 30, exact: int = 0, offset: int = 
                     # WHAT THE INDEX KNOWS about this track, so "unverified" stops being the
                     # only thing said about it. Each is a real search path that does or
                     # does not exist for this row.
-                    "has": {"name": bool(r["mbid"]), "words": r["lyrics_state"] == "found", "instrumental": r["lyrics_state"] == "instrumental",
+                    "has": {"name": bool(r["mbid"]), "words": r["lyrics_state"] in ("found", "heard"), "heard": r["lyrics_state"] == "heard", "instrumental": r["lyrics_state"] == "instrumental",
                             "when": bool(fr and fr["year"]), "where": bool(fr and fr["country"]), "sounds": int(tid) in ev_rows, "preview": bool(mr)},
                     "verified": bool(r["verified"]), "duration": r["duration"], "score": round(float(s), 4),
                     "via": v[0] if v else "sound",
@@ -622,17 +632,21 @@ def _store_lyrics(tid, state, g, g2=()):
         c.execute("DELETE FROM lyric_grams WHERE track_id=?", (tid,)); c.execute("DELETE FROM lyric_bigrams WHERE track_id=?", (tid,))
         if g: c.executemany("INSERT OR IGNORE INTO lyric_grams(track_id, gram) VALUES(?,?)", [(tid, x) for x in g])
         if g2: c.executemany("INSERT OR IGNORE INTO lyric_bigrams(track_id, gram) VALUES(?,?)", [(tid, x) for x in g2])
-        c.execute("UPDATE tracks SET lyrics_state=? WHERE id=?", (state, tid))
+        c.execute("UPDATE tracks SET lyrics_state=?, lyrics_checked=? WHERE id=?", (state, time.time(), tid))
 LYRICS = _lyr.LyricsWorker(_store_lyrics)
 def queue_lyrics(tid):
     with db() as c:
         r = c.execute("SELECT artist, title, album, duration, lyrics_state FROM tracks WHERE id=?", (tid,)).fetchone()
-    if r and r["lyrics_state"] == "none": LYRICS.enqueue(tid, r["artist"], r["title"], r["album"], r["duration"])
+    if r and r["lyrics_state"] in ("none", "missing"): LYRICS.enqueue(tid, r["artist"], r["title"], r["album"], r["duration"])
 with db() as _c:   # one-time: lyrics found before the bigram table existed are fetched again so quotes work on them
     if _c.execute("SELECT COUNT(*) FROM lyric_bigrams").fetchone()[0] == 0 and _c.execute("SELECT COUNT(*) FROM tracks WHERE lyrics_state='found'").fetchone()[0]:
         _c.execute("UPDATE tracks SET lyrics_state='none' WHERE lyrics_state='found'")
-with db() as _c:   # catch-up: everything that has never been looked up
-    for r in _c.execute("SELECT id, artist, title, album, duration FROM tracks WHERE lyrics_state='none' AND artist IS NOT NULL AND title IS NOT NULL").fetchall():
+with db() as _c:   # catch-up: never looked up, PLUS "missing" ones not asked about in 30 days
+    for r in _c.execute("""SELECT id, artist, title, album, duration FROM tracks
+                           WHERE artist IS NOT NULL AND title IS NOT NULL AND (
+                             lyrics_state='none'
+                             OR (lyrics_state='missing' AND (lyrics_checked IS NULL OR lyrics_checked < ?)))""",
+                        (time.time() - 30 * 86400,)).fetchall():
         LYRICS.enqueue(r["id"], r["artist"], r["title"], r["album"], r["duration"])
 print("lyrics: queued", LYRICS.q.qsize())
 
@@ -705,6 +719,54 @@ def play(tid: int, request: Request):
         except _media.Unavailable: url = None
     if not url: raise HTTPException(404, "no preview")
     return {"url": url, "source": m["source"], "link": m["link"]}
+
+# ---- lyrics the BROWSER heard, for tracks no database has ------------------
+class LyricsIn(BaseModel):
+    fp_hash: str = Field(min_length=40, max_length=40)
+    grams: list[str] = Field(default_factory=list, max_length=4000)     # decimal strings: JSON has no 64-bit ints
+    bigrams: list[str] = Field(default_factory=list, max_length=4000)
+    model: str = Field(max_length=80)
+
+@app.post("/api/needs_lyrics")
+def needs_lyrics(body: dict, request: Request):
+    """Which of these recordings has NO words anyone can search? Only tracks
+    LRCLIB had nothing for — never ones it answered, never instrumentals,
+    never ones a browser has already transcribed."""
+    ratelimit(client_ip(request), 3000)
+    hashes = [h for h in (body.get("fp_hashes") or [])[:500] if isinstance(h, str) and len(h) == 40]
+    if not hashes: return {"need": []}
+    with db() as c:
+        rows = c.execute("SELECT fp_hash FROM tracks WHERE lyrics_state='missing' AND fp_hash IN (%s)" % ",".join("?" * len(hashes)), hashes).fetchall()
+    return {"need": [r["fp_hash"] for r in rows]}
+
+@app.post("/api/submit_lyrics")
+def submit_lyrics(body: LyricsIn, request: Request):
+    """Hashes of what a browser heard. NO TEXT — the words never leave the
+    machine they were heard on, and a hash cannot be turned back into them."""
+    ratelimit(client_ip(request), 6000)
+    with db() as c:
+        row = c.execute("SELECT id, lyrics_state FROM tracks WHERE fp_hash=?", (body.fp_hash,)).fetchone()
+    if not row: raise HTTPException(404, "unknown recording")
+    # never overwrite a real lookup with a guess
+    if row["lyrics_state"] in ("found", "instrumental"): return {"ok": True, "skipped": row["lyrics_state"]}
+    def ints(xs):
+        out = []
+        for x in xs:
+            try:
+                v = int(x)
+                if 0 <= v <= 0x7FFFFFFFFFFFFFFF: out.append(v)
+            except (TypeError, ValueError): pass
+        return out
+    g, g2 = ints(body.grams), ints(body.bigrams)
+    if not g: return {"ok": True, "empty": True}
+    tid = row["id"]
+    with db() as c:
+        c.execute("DELETE FROM lyric_grams WHERE track_id=?", (tid,)); c.execute("DELETE FROM lyric_bigrams WHERE track_id=?", (tid,))
+        c.executemany("INSERT OR IGNORE INTO lyric_grams(track_id, gram) VALUES(?,?)", [(tid, x) for x in g])
+        if g2: c.executemany("INSERT OR IGNORE INTO lyric_bigrams(track_id, gram) VALUES(?,?)", [(tid, x) for x in g2])
+        c.execute("UPDATE tracks SET lyrics_state='heard', lyrics_checked=? WHERE id=?", (time.time(), tid))
+    publish_stats()
+    return {"ok": True, "grams": len(g)}
 
 def requeue_facts_errors(limit=20):
     """Lookups MusicBrainz could not answer are retried on the next submission

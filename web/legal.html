@@ -19,6 +19,7 @@
 <div class="box">
 <ul>
 <li><b>Audio.</b> No file is ever uploaded. When you add music, your own browser reads the files on your computer, computes the numbers above, and sends only those. The server has no endpoint that accepts audio — it rejects anything that is not a 512-number vector of the expected shape.</li>
+<li><b>Words heard in the track.</b> When no lyrics database has a song at all, your browser can listen to it and work out the words itself, using a speech model that runs on your machine. The words are turned into the same one-way hashes as everything else and thrown away immediately. They are never sent anywhere, never stored, and a hash cannot be turned back into them. Nothing about this leaves your computer except numbers. It only ever runs on songs nothing else has words for, never on a song a database already answered.</li>
 <li><b>Lyrics.</b> For a track with an artist and a title, the server asks <a href="https://lrclib.net">LRCLIB</a> (an open lyrics database) for the lyrics, turns them into one-way hashes of three-word runs, and discards the text. The hashes let a search that contains three words in a row from a song find it; nobody can read lyrics back out of them.</li>
 <li><b>Cover art, file names, folder paths, or anything else from your library.</b> Tags (artist/title/album) are read from the file to label the entry and that label is all that is sent.</li>
 <li><b>Accounts, cookies, analytics, or tracking.</b> There is no sign-up and no tracking script.</li>

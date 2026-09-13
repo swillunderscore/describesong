@@ -330,6 +330,7 @@ async function scan(all) {
   if (!files.length) { $("#status").textContent = `Nothing new — all ${audio.length} audio files here were added earlier.`; return; }
   $("#bar").max = files.length; $("#bar").value = 0;
   let done = 0, sent = 0, ident = 0, failed = 0, known = 0, noEv = 0, current = "";
+  const byHash = new Map();          // fp_hash -> File, for the lyrics pass
   scanning = true; stopRequested = false; $("#stop").hidden = false; $("#stop").textContent = "Stop";
   document.documentElement.dataset.scanning = "1";   // water.js pauses the simulation: the GPU belongs to CLAP now
   const t0 = performance.now();
@@ -388,6 +389,7 @@ async function scan(all) {
     const a = await nextA;
     if (i + 1 < files.length) nextA = stageA(files[i + 1]).catch(e => e);
     if (a instanceof Error) { failed++; log(`✗ ${f.name}: ${a.message}`); finishOne(f, false); continue; }
+    if (a.idr && a.idr.fp_hash) byHash.set(a.idr.fp_hash, f);
     // has_vector false means this database has switched ears since the track
     // went in: it has no vector in the active model's space, so it must be
     // embedded again like a new one. Without this a switch would quietly leave
@@ -415,6 +417,52 @@ async function scan(all) {
   scanning = false; $("#stop").hidden = true; current = "";
   delete document.documentElement.dataset.scanning;
   $("#status").textContent = `${stopRequested ? "stopped" : "done"} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
+  // PHASE TWO. The index is complete and searchable at this point; everything
+  // below is extra. Only tracks LRCLIB has NO words for — never an instrumental,
+  // never one it answered. Closing the tab here costs nothing.
+  if (!stopRequested) await hearLyricsPass(byHash);
+}
+
+// ---- lyrics for the songs no database has words for -----------------------
+const LYR_KEY = "describesong.heard.v1";
+const loadHeard = () => { try { return new Set(JSON.parse(localStorage.getItem(LYR_KEY) || "[]")); } catch { return new Set(); } };
+const saveHeard = s => { try { localStorage.setItem(LYR_KEY, JSON.stringify([...s])); } catch {} };
+
+async function hearLyricsPass(byHash) {
+  if (!byHash.size) return;
+  const hashes = [...byHash.keys()], need = [];
+  for (let i = 0; i < hashes.length; i += 500) {
+    const r = await post("/api/needs_lyrics", { fp_hashes: hashes.slice(i, i + 500) }).catch(() => null);
+    if (r && r.need) need.push(...r.need);
+  }
+  const heard = loadHeard();
+  const todo = need.filter(h => !heard.has(h));
+  if (!todo.length) return;
+  const base = $("#status").textContent;
+  $("#stop").hidden = false; $("#stop").textContent = "Stop"; stopRequested = false; scanning = true;
+  let n = 0, got = 0, t0 = performance.now();
+  const say = extra => { $("#status").textContent = `${base}\n\nNo lyrics exist online for ${todo.length} of these. Listening for the words so they can be found by a line you remember — ${n} of ${todo.length}${got ? `, ${got} now searchable` : ""}. ${extra || "Close the tab whenever; nothing is lost."}`; };
+  say("The model downloads once, then it's about ten seconds a track.");
+  for (const h of todo) {
+    if (stopRequested) break;
+    const f = byHash.get(h); n++;
+    try {
+      const pcm = await decode(f);
+      const fpr = await ask({ type: "fingerprint", pcm, sampleRate: 48000 }, [pcm.buffer]);
+      const res = await ask({ type: "lyrics", ref: fpr.ref });
+      if (res.grams && res.grams.length) {
+        const r = await post("/api/submit_lyrics", { fp_hash: h, grams: res.grams, bigrams: res.bigrams, model: "whisper-large-v3-turbo" });
+        if (r && r.ok && r.grams) { got++; log(`♪ ${f.name}: ${res.words} words heard`); }
+      } else log(`· ${f.name}: nothing audible to transcribe`);
+      heard.add(h); saveHeard(heard);
+    } catch (err) {
+      log(`✗ ${f.name}: lyrics — ${err.message}`);
+      if (/could not load/i.test(err.message)) break;      // no model: stop, do not grind through every track
+    }
+    say(`about ${fmt((performance.now() - t0) / 1000 / Math.max(n, 1) * (todo.length - n))} left`);
+  }
+  scanning = false; $("#stop").hidden = true;
+  $("#status").textContent = `${base}\n\nLyrics: ${got} of ${todo.length} tracks can now be found by their words.`;
 }
 
 async function decode(file) {

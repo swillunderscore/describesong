@@ -2,6 +2,7 @@
 // Receives 48 kHz mono PCM; nothing here touches the network except the model download.
 import init, { fingerprint } from "./wasm/fingerprint_wasm.js";
 import { stft } from "./stft.js";
+import { normWords, grams } from "./lyrichash.js";
 import { AutoProcessor, ClapAudioModelWithProjection, AutoModelForAudioClassification, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 
 const MODEL = "Xenova/larger_clap_music_and_speech";
@@ -137,6 +138,42 @@ async function tagWith(pcm, sampleRate) {
   const out = {}; for (const [k, v] of Object.entries(best)) if (v >= 0.05) out[k] = Math.round(v * 10000) / 10000;
   return out;
 }
+// ---- lyrics, for tracks no database has words for -------------------------
+// whisper-large-v3-turbo: measured against its own reference lyrics on 10
+// songs — 41 % of word-triples, the same as full large-v3 at half the size
+// (small managed 22 %). See QUEUE.md.
+// THE WORDS NEVER LEAVE THIS MACHINE. They exist inside this worker for as
+// long as it takes to hash them, and only the hashes are returned.
+const ASR = "onnx-community/whisper-large-v3-turbo";
+let asr = null, asrReady = null, asrDevice = "";
+async function initAsr() {
+  if (asr) return;
+  if (!asrReady) asrReady = (async () => {
+    const { pipeline } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1");
+    for (const [device, dtype] of (navigator.gpu ? [["webgpu", "q4"], ["wasm", "q4"]] : [["wasm", "q4"]])) {
+      try {
+        asr = await pipeline("automatic-speech-recognition", ASR, { device, dtype });
+        asrDevice = device; return;
+      } catch (e) { console.warn("lyrics model on", device, "failed:", String(e && e.message || e).slice(0, 160)); }
+    }
+    throw new Error("the lyrics model could not load in this browser");
+  })().finally(() => { asrReady = null; });
+  await asrReady;
+}
+async function hearLyrics(pcm48) {
+  await initAsr();
+  const y = to16k(pcm48);                       // same 33-tap low-pass the tagger uses
+  const out = await asr(y, {
+    chunk_length_s: 30, stride_length_s: 5, language: "en", task: "transcribe",
+    // deterministic: greedy, no random retry. Measured: the default sampling
+    // fallback gave 32/37/62 % on three runs of ONE track.
+    do_sample: false, num_beams: 1, temperature: 0,
+  });
+  const words = normWords(out && out.text);
+  const g = await grams(words, 3), g2 = await grams(words, 2);
+  return { grams: g, bigrams: g2, words: words.length };   // the text itself is dropped here
+}
+
 async function initModels() {
   await init();
   proc = await AutoProcessor.from_pretrained(MODEL);
@@ -200,6 +237,11 @@ self.onmessage = async ({ data }) => {
       if (!data.keepHeld) held.delete(data.ref);
       const events = await tagEvents(h.pcm, h.sampleRate);
       self.postMessage({ id, events }); return;
+    }
+    if (data.type === "lyrics") {
+      const h = held.get(data.ref); if (!data.keepHeld) held.delete(data.ref);
+      if (!h) throw new Error("no audio held for ref " + data.ref);
+      self.postMessage({ id, ...(await hearLyrics(h.pcm)), device: asrDevice }); return;
     }
     if (data.type === "embed") {
       const h = held.get(data.ref); held.delete(data.ref);
