@@ -168,7 +168,7 @@ async function gpuCheck() {
     let name = "";
     try { const i = await adapter.requestAdapterInfo?.(); name = [i?.vendor, i?.architecture].filter(Boolean).join(" "); } catch {}
     box.className = "gpu ok";
-    box.innerHTML = `<b>Your graphics card is being used.</b> About 1.5 seconds a track${name ? ` · ${esc(name)}` : ""}.`;
+    box.innerHTML = `<b>This browser can use your graphics card.</b> That should be about 1.5 seconds a track${name ? ` · ${esc(name)}` : ""}.`;
   } else {
     const fix = firefox ? "Firefox only has it on Windows so far. Chrome or Edge will do the same scan about twenty times faster."
       : safari ? "Safari added it recently — updating macOS or iOS may be enough. Chrome or Edge will work today."
@@ -342,6 +342,16 @@ async function scan(all) {
   try { const st = await fetch("/api/stats").then(r => r.json()); if (st.model && st.ear) { MODEL_ID = st.model; EAR = st.ear; } } catch {}
   let initr; try { initr = await ask({ type: "init", ear: EAR }); } catch (err) { $("#status").textContent = "model failed to load: " + err.message; scanning = false; $("#stop").hidden = true; delete document.documentElement.dataset.scanning; return; }
   const backend = initr.device === "webgpu" ? "GPU" : "CPU — no WebGPU in this browser, slower";
+  // say what actually happened, not what was available. The banner above is a
+  // capability check made before any model loads; this is the truth.
+  const gbox = $("#gpu");
+  if (gbox) {
+    const onGpu = initr.device === "webgpu";
+    gbox.className = "gpu " + (onGpu ? "ok" : "no");
+    gbox.innerHTML = onGpu ? "<b>Running on your graphics card.</b> About 1.5 seconds a track."
+      : "<b>Running on the processor, not your graphics card.</b> The model could not start on the GPU here, so this will be far slower. Chrome or Edge usually manage it.";
+    gbox.hidden = false;
+  }
   const progress = () => {
     const el = (performance.now() - t0) / 1000, left = done ? el / done * (files.length - done) : 0;
     $("#status").textContent = `${done} of ${files.length} · ${sent} added (${ident} identified, ${sent - ident} unverified)${known ? ` · ${known} already in` : ""}${failed ? ` · ${failed} failed` : ""} · ${backend} · ${fmt(el)} elapsed${done ? ` · about ${fmt(left)} left` : ""}${current ? `\n${current}` : ""}`;
@@ -418,11 +428,14 @@ async function scan(all) {
   await Promise.all(net);
   scanning = false; $("#stop").hidden = true; current = "";
   delete document.documentElement.dataset.scanning;
-  $("#status").textContent = `${stopRequested ? "stopped" : "done"} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
+  // Ask BEFORE wording the finish line: saying "done" and then starting more
+  // work is the thing he objected to, and it needs the answer first.
+  const todo = stopRequested ? [] : await lyricsTodo(byHash);
+  $("#status").textContent = `${stopRequested ? "stopped" : (todo.length ? "sounds indexed" : "done")} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
   // PHASE TWO. The index is complete and searchable at this point; everything
   // below is extra. Only tracks LRCLIB has NO words for — never an instrumental,
   // never one it answered. Closing the tab here costs nothing.
-  if (!stopRequested) await hearLyricsPass(byHash);
+  if (todo.length) await hearLyricsPass(byHash, todo);
 }
 
 // ---- lyrics for the songs no database has words for -----------------------
@@ -431,16 +444,20 @@ const LYR_KEY = "describesong.heard.v1";
 const loadHeard = () => { try { return new Set(JSON.parse(localStorage.getItem(LYR_KEY) || "[]")); } catch { return new Set(); } };
 const saveHeard = s => { try { localStorage.setItem(LYR_KEY, JSON.stringify([...s])); } catch {} };
 
-async function hearLyricsPass(byHash) {
-  if (!byHash.size) return;
+async function lyricsTodo(byHash) {
+  if (!byHash.size) return [];
   const hashes = [...byHash.keys()], need = [];
   for (let i = 0; i < hashes.length; i += 500) {
     const r = await post("/api/needs_lyrics", { fp_hashes: hashes.slice(i, i + 500) }).catch(() => null);
     if (r && r.need) need.push(...r.need);
   }
   const heard = loadHeard();
-  const todo = need.filter(h => !heard.has(h));
-  if (!todo.length) return;
+  return need.filter(h => !heard.has(h));
+}
+
+async function hearLyricsPass(byHash, todo) {
+  if (!todo || !todo.length) return;
+  const heard = loadHeard();
   const base = $("#status").textContent;
   $("#stop").hidden = false; $("#stop").textContent = "Stop"; stopRequested = false; scanning = true;
   let n = 0, got = 0, t0 = performance.now();
