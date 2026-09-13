@@ -1364,3 +1364,24 @@ and the browser was running the old one.
 FIX: an uncommitted deploy now stamps `<commit>-<sha1 of web/ contents>`, so
 every deploy is a genuinely new URL. VERIFIED: stamp went 6aff3e0-dirty ->
 6aff3e0-2238a53 and the page picked up the new file immediately.
+
+### CHECKED 2026-09-13 — the legal page, claim by claim. Four were wrong.
+1. "The sound model is LAION CLAP (CC0 weights)" — WRONG on both counts since
+   the switch. It is MuQ-MuLan, weights CC-BY-NC-4.0. This sat two sentences
+   from "anyone may use it, INCLUDING COMMERCIALLY", so it was the worst error
+   on the page. Corrected to name the model and its actual licence.
+   *** HIS DECISION, NOT MINE: the database is ODbL and invites commercial use,
+   while the model that produces the numbers is non-commercial. Whether model
+   OUTPUTS inherit a weights licence is genuinely unsettled and I am not going
+   to rule on it. Either soften the commercial wording, or state the position
+   deliberately. Do not leave it unconsidered. ***
+2. "exact up to about half a million tracks" — the code's EXACT_MAX is 150,000.
+   Corrected. (An older QUEUE note says ~500k; the code is the truth.)
+3. "Removal deletes the vector and the label; there is nothing else to delete"
+   — there is now also sound events, both lyric-hash tables, year/country, the
+   name index and the preview link. Corrected to list them.
+4. "Still under a second at two hundred million tracks" stated as fact. It is
+   an engineering projection from the scaling plan; nothing near that size has
+   ever been run. Now says so plainly.
+VERIFIED LIVE: MuQ-MuLan and CC-BY-NC-4.0 present; LAION CLAP, CC0 and "half a
+million" gone. Markup balanced, no unclosed tags.
