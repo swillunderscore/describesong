@@ -1268,3 +1268,21 @@ OPEN CONCERN — the 606 MB model comes off the PI, not a CDN. cf-cache-status
 was DYNAMIC when measured, so every new scanner pulls it from his upstream at
 ~6.7 MB/s (~90 s each). Fine for a few friends, not for a crowd. Worth a
 Cloudflare cache rule or moving the weights to a CDN before it gets busy.
+
+### 2026-09-13 — index reconciled: 2,275 tracks, 2,275 searchable, gap 0
+- 1060 공중도둑 "Ahhhh, These Chains!" — his file is "02 - 鉄鎖.mp3" (same word,
+  different script), 307 s vs 308 s, in the artist's own folder. He confirmed.
+- 1580 Gucci Mane — AcoustID had filed his "Have It All (Feat. Pharrell)" under
+  "Walk With a Waddle", a song he does not own. He said so. Row relabelled,
+  mbid cleared, verified reset, labels dropped, lyrics re-queued under the
+  real name. The vector was already correct: it described the audio, not the
+  wrong title.
+- 1839 Metro Station "Disco" — REMOVED. No file of that length anywhere on his
+  Pi, this machine, or the trial library. A row from a scan of something that
+  is no longer there; nothing could ever have completed it.
+- GOTCHA for next time: tracks_fts is a CONTENTLESS fts5 table. It accepts
+  neither DELETE-by-rowid nor 'rebuild'. A row is withdrawn only by
+  INSERT INTO tracks_fts(tracks_fts, rowid, <cols>) VALUES('delete', ...)
+  with the EXACT values that were indexed. Two earlier attempts raised and
+  rolled back the whole transaction, which is why nothing changed until the
+  values were read back first.
