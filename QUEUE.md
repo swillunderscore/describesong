@@ -1201,3 +1201,39 @@ COST IF BUILT: 1.5 GB download on top of MuLan's 606 MB, ~9 s/track against
 nothing for, once each, never for tracks already covered.
 STILL OPEN: whether it holds up on obscure tracks — these 10 all HAD lyrics
 online, so they are, by definition, not the ones that need this.
+
+### MEASURED 2026-09-12 — whisper-large-v3-TURBO is the one to build on
+Distilled decoder, already packaged as ONNX for browsers
+(onnx-community/whisper-large-v3-turbo, 18k downloads, fp16/int8/bnb4).
+Same 10 songs, deterministic:
+
+| model     | params | median match | 10 tracks |
+|-----------|--------|--------------|-----------|
+| small     |  244M  | 22 %         | —    |
+| large-v3  | 1543M  | 42 %         | 94 s |
+| **turbo** |  809M  | **41 %**     | 46 s |
+
+Turbo matches the full model at HALF the parameters and HALF the time. Build on
+turbo. (large-v3 is 1.5 GB and pointless here; turbo is ~800 MB at int8.)
+
+### DESIGN AGREED — lyrics as a continuation, not a second thing to sell
+His worry: "we have to just like beg the user to do the lyric step". Avoided by
+ordering, not by persuasion:
+- PHASE 1, unchanged: MuLan everything. No extra download, no slowdown, and
+  the index is fully working when it reports done.
+- PHASE 2, automatic: only the tracks with no lyrics online (715 of his 2,276,
+  ~27 %). The turbo download happens here, only if any track needs it.
+- Closing the tab at any point loses nothing — the existing DONE_KEY resume
+  already covers it.
+- It is the scan CONTINUING, with a line saying how many tracks it is making
+  findable by their words. Not a separate ask.
+Ordering note: transcription is MORE total work than MuLan (107 min vs 61 min
+on his library), so it cannot finish first. Phase 1 first is what makes search
+usable in an hour instead of three.
+
+### FREE WIN, not yet done — re-check lyrics for the 715
+Sampled 40 of them: 5 would match TODAY on a plain re-check (stale artist/title
+from before AcoustID corrected them, or LRCLIB has since added them). 0 were
+rejected on the 12 s duration tolerance — that theory is dead. So ~1 in 8 of
+the 715, about 90 tracks, are free lyrics with no transcription at all. Six
+minutes of lookups at LRCLIB's 0.25 s pacing. DO THIS BEFORE building phase 2.
