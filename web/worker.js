@@ -261,6 +261,11 @@ self.onmessage = async ({ data }) => {
       const events = await tagEvents(h.pcm, h.sampleRate);
       self.postMessage({ id, events }); return;
     }
+    if (data.type === "init_fp") {
+      // fingerprinting only. The lyrics pass needs the Chromaprint WASM but not
+      // MuLan — loading the 600 MB ear to transcribe words would be absurd.
+      await init(); self.postMessage({ id, ok: true }); return;
+    }
     if (data.type === "lyrics") {
       const h = held.get(data.ref); if (!data.keepHeld) held.delete(data.ref);
       if (!h) throw new Error("no audio held for ref " + data.ref);

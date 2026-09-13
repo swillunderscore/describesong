@@ -357,6 +357,11 @@ async function scan(all) {
     const only = new Map(), todo = [];
     for (const [i, h] of byIndex) { if (!heard.has(h)) { only.set(h, audio[i]); todo.push(h); } }
     if (!todo.length) { $("#status").textContent = `Nothing to do — all ${audio.length} files are indexed, and every one either has words or has none to find.`; return; }
+    // the fingerprint module has to exist before anything is fingerprinted —
+    // this path used to skip straight past the worker's init and every track
+    // failed on __wbindgen_free
+    try { await ask({ type: "init_fp" }); }
+    catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
     scanning = true; stopRequested = false;
     await hearLyricsPass(only, todo);
     scanning = false;

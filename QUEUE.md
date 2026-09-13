@@ -1335,3 +1335,12 @@ reads TAGS only — a few hundred header bytes per file — so nothing is decode
 just to discover which tracks need work, and stored fingerprints stop mattering.
 Verified live: 1 of 3 matched correctly (needs words / already has them / not
 in the index).
+
+### FIXED 2026-09-13 — every track failed with __wbindgen_free
+The tag-matching path returned before the worker was ever initialised, so the
+Chromaprint WASM was never loaded and every single track died on the first
+fingerprint call. Shipped without testing that path; he found it.
+FIX: a `init_fp` worker message that loads ONLY the fingerprint WASM (not the
+600 MB ear — pointless for transcribing words), called before the lyrics pass.
+VERIFIED in the browser: init_fp returns ok, and a fingerprint of synthetic PCM
+succeeds afterwards (52 chars, 12 s).
