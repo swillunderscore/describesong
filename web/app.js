@@ -319,13 +319,39 @@ const doneKey = f => `${f.name}|${f.size}|${f.lastModified}`;
 // pass — which is why a folder of 564 tracks needing words only ever showed a
 // fraction of them. Old lists load as keys with a null hash and gain one the
 // next time that file is seen.
+// Browsers give a page about 5 MB. A 50,000-track library fills it, the save
+// throws, and the old `catch {}` swallowed that: resume quietly stopped working
+// forever and nothing was ever said. THE WARNING IS THE FIX. Lines instead of
+// JSON were meant to buy real headroom but measured only ~6 % — the keys
+// dominate, not the punctuation — so it is kept for being simpler to read, not
+// as a solution. Past roughly 50,000 tracks this needs IndexedDB, which has
+// room in the hundreds of MB.
 function loadDone() {
+  const raw = localStorage.getItem(DONE_KEY);
+  if (!raw) return new Map();
   try {
-    const raw = JSON.parse(localStorage.getItem(DONE_KEY) || "[]");
-    return new Map(Array.isArray(raw) ? raw.map(x => Array.isArray(x) ? x : [x, null]) : Object.entries(raw));
+    if (raw[0] === "[") {                      // the old JSON form, read once and rewritten on the next save
+      const arr = JSON.parse(raw);
+      return new Map(arr.map(x => Array.isArray(x) ? x : [x, null]));
+    }
+    return new Map(raw.split("\n").filter(Boolean).map(line => { const i = line.indexOf("\t"); return i < 0 ? [line, null] : [line.slice(0, i), line.slice(i + 1) || null]; }));
   } catch { return new Map(); }
 }
-function saveDone(m) { try { localStorage.setItem(DONE_KEY, JSON.stringify([...m])); } catch {} }
+let doneStoreFull = false;
+function saveDone(m) {
+  try {
+    let out = "";
+    for (const [k, v] of m) out += k + "\t" + (v || "") + "\n";
+    localStorage.setItem(DONE_KEY, out);
+    doneStoreFull = false;
+  } catch {
+    // out of room: say it once, plainly, rather than silently losing resume
+    if (!doneStoreFull) {
+      doneStoreFull = true;
+      log("! This browser is out of storage, so finished files can no longer be remembered. The scan still works, but it will start from the beginning next time. Clearing site data for describesong.com fixes it.");
+    }
+  }
+}
 const fmt = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
 // A 429 from the server means "slow down", not "this file failed": wait and retry,
 // and say so in the status line. Any other error carries the server's reason.

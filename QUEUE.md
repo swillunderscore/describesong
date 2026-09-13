@@ -1471,3 +1471,32 @@ VERIFIED after all three: lyrics-only on a single track, sound pass did NOT run,
    from ratelimit() and worth doing deliberately.
 VERIFIED after 1 and 2: full lyrics-only run, 10 words, Stop correctly hidden at
 the end, no console errors, search answering throughout.
+
+### FIXED 2026-09-13 — a full browser store killed resume in silence
+`saveDone` was `try { ... } catch {}`. Browsers give a page about 5 MB; the
+finished-files list is roughly 95 bytes a track, so a 50,000-track library
+fills it. The save threw, the catch swallowed it, and from then on NOTHING was
+remembered — every scan started from the beginning, forever, with no hint why.
+Worst for exactly the people who need resume most.
+- It now says so, once: "This browser is out of storage… it will start from the
+  beginning next time."
+- Storage went from JSON to tab-separated lines. I wrote "about a third
+  smaller" in the comment; MEASURED it at 6 % — the keys dominate, not the
+  punctuation — and corrected the comment rather than ship the claim.
+- REAL FIX past ~50,000 tracks is IndexedDB (hundreds of MB). Not done.
+
+### FIXED 2026-09-13 — a crashed worker hung the page forever
+No `onerror` or `onmessageerror` was ever attached. A failed model load or an
+out-of-memory crash left every pending promise unsettled: the scan froze
+mid-track with no message, and Stop could not help because the loop was
+awaiting something that would never settle. Now a crash rejects everything
+waiting, so the track fails with a reason and the run continues.
+VERIFIED with a worker that throws on load: rejects with "the background worker
+stopped: Uncaught Error: boom during load" instead of hanging.
+
+### FIXED 2026-09-13 — the live-count stream had no limit at all
+Every other endpoint had one. A request counter is the wrong tool for a stream
+meant to stay open, so it is capped by CONNECTIONS: 8 per address, 400 server
+-wide, decremented when the connection closes and the row dropped so addresses
+do not accumulate. VERIFIED: 11 opened from one address, the excess refused
+with 429, normal streaming unaffected.
