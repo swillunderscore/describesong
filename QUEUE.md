@@ -1500,3 +1500,27 @@ meant to stay open, so it is capped by CONNECTIONS: 8 per address, 400 server
 -wide, decremented when the connection closes and the row dropped so addresses
 do not accumulate. VERIFIED: 11 opened from one address, the excess refused
 with 429, normal streaming unaffected.
+
+### FIXED 2026-09-13 — the lyrics pass was keyed by HASH, and mixed state broke it
+He asked me to keep looking at the lyrics pass with a mixed-state folder. Three
+faults, all the same root cause: the work was tracked by fp_hash, when what is
+actually being processed is a FILE.
+1. TWO INDEXED TRACKS, ONE FILE. needs_lyrics_by_name appends an entry per
+   matching track, so two rips of a song both missing words returned two
+   entries for one file index. `byIndex.set(i, hash)` kept only the last — the
+   other track was silently dropped and would never get words.
+2. TWO FILES, ONE TRACK. Duplicate copies in a folder both matched one track.
+   The file map kept the last, but the to-do list got the hash TWICE: the same
+   file transcribed twice, ~10 s wasted, and an inflated total on the bar.
+3. THE WRONG THING MARKED DONE. `heard.add(h)` recorded the TAG-matched hash,
+   while the words go to the FINGERPRINT's track. When those differ — which is
+   exactly when it matters — a track with no words was marked handled and never
+   retried in that browser.
+FIX: one shape for both callers, `{ only: Map<fileKey, File>, todo: fileKey[] }`,
+built by a shared byFile(). One entry per file, deduped, and what gets marked
+done is the file actually transcribed. The fp_hash is no longer needed inside
+the pass at all, since submission carries the fingerprint.
+No migration needed: the server's own lyrics_state='missing' filter is the real
+gate; the browser list only saves asking twice.
+VERIFIED: full run, 10 words, no console errors, and the stored key is now a
+file key rather than a hash.

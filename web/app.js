@@ -498,12 +498,12 @@ async function scan(all) {
   // Ask BEFORE wording the finish line: saying "done" and then starting more
   // work is the thing he objected to, and it needs the answer first.
   for (const f of skippedKnown) byHash.set(doneSet.get(doneKey(f)), f);   // whole folder, not just this run
-  const todo = stopRequested ? [] : await lyricsTodo(byHash);
+  const { only: lyrFiles, todo } = stopRequested ? { only: new Map(), todo: [] } : await lyricsTodo(byHash);
   $("#status").textContent = `${stopRequested ? "stopped" : (todo.length ? "sounds indexed" : "done")} — ${sent} added (${ident} identified by fingerprint, ${sent - ident} unverified)${known ? `, ${known} already in` : ""}${failed ? `, ${failed} failed` : ""}${noEv ? `, ${noEv} without sounds` : ""}${skipped ? `, ${skipped} skipped` : ""} in ${fmt((performance.now() - t0) / 1000)}`;
   // PHASE TWO. The index is complete and searchable at this point; everything
   // below is extra. Only tracks LRCLIB has NO words for — never an instrumental,
   // never one it answered. Closing the tab here costs nothing.
-  try { if (todo.length) await hearLyricsPass(byHash, todo); }
+  try { if (todo.length) await hearLyricsPass(lyrFiles, todo); }
   finally { scanning = false; $("#stop").hidden = true; }
 }
 
@@ -526,14 +526,23 @@ async function lyricsOnlyInner(audio) {
   $("#status").textContent = `Reading tags from ${audio.length} files to see which have no words…`;
   const tagged = [];
   for (const f of audio) { const t = (await readTags(f)) || guessFromName(f.name); tagged.push({ artist: t.artist, title: t.title }); }
+  // KEYED BY FILE, NOT BY HASH. Three things went wrong when it was keyed by
+  // hash, and a library with duplicates hits all of them:
+  //   two indexed tracks sharing an artist+title both matched one file, and the
+  //     map kept only the last — the other silently never got words;
+  //   two copies of a song in the folder both matched one track, so the same
+  //     file was transcribed twice and the total was inflated;
+  //   the hash marked "done" was the TAG match, while the words went to the
+  //     FINGERPRINT's track — so when they differed, a track with no words was
+  //     marked handled and never retried.
+  // One entry per file fixes all three. The server's own "missing" filter is
+  // the real gate anyway; this list only saves asking twice.
   const byIndex = new Map();
   for (let i = 0; i < tagged.length; i += 2000) {
     const r = await post("/api/needs_lyrics_by_name", { tracks: tagged.slice(i, i + 2000) }).catch(() => null);
-    for (const n of (r && r.need) || []) byIndex.set(n.i + i, n.fp_hash);
+    for (const n of (r && r.need) || []) if (!byIndex.has(n.i + i)) byIndex.set(n.i + i, n.fp_hash);
   }
-  const heard = loadHeard();
-  const only = new Map(), todo = [];
-  for (const [i, h] of byIndex) { if (!heard.has(h)) { only.set(h, audio[i]); todo.push(h); } }
+  const { only, todo } = byFile([...byIndex.keys()].map(i => audio[i]));
   if (!todo.length) { $("#status").textContent = `Nothing to do — every one of those ${audio.length} files either has words already or has none to find.`; return; }
   // the fingerprint module must exist before anything is fingerprinted
   try { await ask({ type: "init_fp" }); }
@@ -545,15 +554,27 @@ const LYR_KEY = "describesong.heard.v1";
 const loadHeard = () => { try { return new Set(JSON.parse(localStorage.getItem(LYR_KEY) || "[]")); } catch { return new Set(); } };
 const saveHeard = s => { try { localStorage.setItem(LYR_KEY, JSON.stringify([...s])); } catch {} };
 
-async function lyricsTodo(byHash) {
-  if (!byHash.size) return [];
-  const hashes = [...byHash.keys()], need = [];
+// -> { only: Map<fileKey, File>, todo: fileKey[] }. Keyed by FILE so that two
+// copies of a song cannot queue the same work twice, and so that what gets
+// marked "done" is the file actually transcribed.
+async function lyricsTodo(hashToFile) {
+  const empty = { only: new Map(), todo: [] };
+  if (!hashToFile.size) return empty;
+  const hashes = [...hashToFile.keys()], need = [];
   for (let i = 0; i < hashes.length; i += 500) {
     const r = await post("/api/needs_lyrics", { fp_hashes: hashes.slice(i, i + 500) }).catch(() => null);
     if (r && r.need) need.push(...r.need);
   }
-  const heard = loadHeard();
-  return need.filter(h => !heard.has(h));
+  return byFile(need.map(h => hashToFile.get(h)).filter(Boolean));
+}
+function byFile(files) {
+  const heard = loadHeard(), only = new Map(), todo = [];
+  for (const f of files) {
+    const key = doneKey(f);
+    if (heard.has(key) || only.has(key)) continue;
+    only.set(key, f); todo.push(key);
+  }
+  return { only, todo };
 }
 
 async function hearLyricsPass(byHash, todo) {
@@ -578,7 +599,8 @@ async function hearLyricsPassInner(byHash, todo) {
   say("The model downloads once, then it's about ten seconds a track.");
   for (const h of todo) {
     if (stopRequested) break;
-    const f = byHash.get(h); n++;
+    const f = byHash.get(h);      // h is a FILE key now, in both callers
+    n++;
     try {
       const pcm = await decode(f);
       const fpr = await ask({ type: "fingerprint", pcm, sampleRate: 48000 }, [pcm.buffer]);
