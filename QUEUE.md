@@ -1134,3 +1134,26 @@ painfully slow and was wearing out the card.
   under pressure the kernel squeezes Immich and the rest FIRST. His call:
   "id much prefer for my personal shit to slow down and let describesong
   always have its 2gb". Verified by reading memory.low back: 2147483648.
+
+### MEASURED 2026-09-12 — vocal separation does NOT rescue lyric transcription. Idea closed.
+The last thing he asked for and the one I had not tested. Same 10 tracks that
+have real LRCLIB lyrics, so there is ground truth. Split the vocals out with
+Demucs (htdemucs, GPU), transcribe ONLY the vocal stem with whisper-small,
+compare hashed word-triples against the real ones. No lyric text stored or
+printed anywhere — only the fraction of hashes that match.
+
+| approach                  | median overlap | tracks with nothing | s/track |
+|---------------------------|----------------|---------------------|---------|
+| straight transcription     | 26 %           | 2 of 10             |  4.4 |
+| vocals separated first     | **24 %**       | 1 of 10             | 12.0 |
+
+Separation made it slightly WORSE and 3x slower. It rescued one of the two
+tracks that returned nothing and cost accuracy on the rest.
+CONCLUSION: the bottleneck was never the backing music. Whisper is a speech
+model and sung words are its weak case; cleaner vocals do not fix that, and
+stripping the instruments removes context it was using. Adding a second model
+download and 10 s/track to score below a number already judged too low is not
+worth building. CLOSED — do not revisit without a genuinely different model
+(one actually trained on singing), not a better front-end.
+His design constraint, still correct if this is ever reopened: only run it for
+tracks LRCLIB has nothing for (715 of 2,276), never for ones already covered.
