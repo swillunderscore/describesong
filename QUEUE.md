@@ -1169,3 +1169,35 @@ ALSO WRONG ON THE WAY:
 UNTESTED, the only lever left: whisper-LARGE. A HuggingFace search found no
 English lyric model with adoption (mostly Vietnamese fine-tunes).
 HIS CONSTRAINT if revisited: only for tracks LRCLIB has nothing for.
+
+### MEASURED 2026-09-12 — whisper-large-v3 WORKS. The model size was the answer.
+Same 10 random songs, deterministic, straight off the mix:
+
+| model            | median match | songs with nothing | better on |
+|------------------|--------------|--------------------|-----------|
+| whisper-small    | 22 %         | 2 of 10            | —         |
+| whisper-large-v3 | **42 %**     | 2 of 10            | 8 of 10   |
+
+42 % clears the ~34 % of a typed line the search needs to call it a hit.
+THE IDEA IS ALIVE. It was never the separator and never the ad-libs — it was
+a model four times too small for the job.
+
+WHY I TOOK SO LONG, worth not repeating: he asked "is there nothing made for
+singing" and I searched HuggingFace only, found nothing, and said so. He had
+to tell me to look online before I searched the literature, which had the
+answer immediately: research measures Whisper at 56 % word error on SUNG
+lyrics vs 14 % on the SAME words spoken, and states plainly that accompaniment
+matters less than singing style — which is exactly why separation was a wash.
+Search the literature, not just a model hub.
+
+PURPOSE-BUILT MODELS: SongTrans reports ~9 % WER vs Whisper's ~24 %, and
+LyricWhiz pairs Whisper with an LLM to clean up mishearings. NEITHER HAS
+PUBLISHED WEIGHTS — checked HuggingFace and GitHub; what is downloadable under
+"singing transcription" is note/MIDI pitch work, not words. So large-v3 is the
+best thing actually obtainable today.
+
+COST IF BUILT: 1.5 GB download on top of MuLan's 606 MB, ~9 s/track against
+1.6 s. Contained by his constraint: only for the 715 of 2,276 tracks LRCLIB has
+nothing for, once each, never for tracks already covered.
+STILL OPEN: whether it holds up on obscure tracks — these 10 all HAD lyrics
+online, so they are, by definition, not the ones that need this.
