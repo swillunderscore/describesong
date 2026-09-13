@@ -1400,3 +1400,26 @@ and SAY SO.
   video will stutter while it runs, and a big library takes hours. Worth
   starting when you're done with the computer for the day."
 VERIFIED after the change: 10 words heard on a real track, no console errors.
+
+### BUILT 2026-09-13 — "Only find lyrics", a second button that skips the sound pass
+His ask, while the browser was grinding through 2,287 already-indexed files to
+rebuild a done-list I had wiped: it should be able to start at the lyrics.
+It can, because tag matching needs no fingerprint and no decode — a few hundred
+header bytes per file is enough to ask the server which tracks still have no
+words. So the whole sound pass is skippable when a library is already in.
+- New button under the scan button, plus its own hidden folder input.
+- The tag-matching block moved out of scan() into lyricsOnly(), so the button
+  and the end-of-scan path share exactly one implementation.
+- VERIFIED: picked a track, sound pass did NOT run (no "already in" lines),
+  went straight to transcription, 10 words, no console errors.
+
+### ANSWERED 2026-09-13 — can a stopped scan or a changing folder poison the index?
+No, and the guards already existed:
+- A vector must be exactly 512 finite floats AND unit norm, or the server
+  answers 400. Wrong model id is 400. Events over 60 is 400. A label vote for
+  a track that does not exist is 400.
+- One track = one atomic POST, sent only after all of that track's work
+  succeeded. Stopping mid-scan cannot leave a half-written track.
+- The file list is a SNAPSHOT taken when the folder is picked: files added
+  afterwards are invisible until next time; files deleted afterwards fail to
+  read and log a ✗ without sending anything.

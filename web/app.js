@@ -283,6 +283,15 @@ $("#pick").onclick = async () => {
   $("#status").textContent = "reading folder…"; $("#prog").hidden = false; await walk(dir, 0); scan(files);
 };
 $("#folder").addEventListener("change", e => scan([...e.target.files]).finally(() => { e.target.value = ""; }));
+const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|opus)$/i;
+$("#pickLyrics").onclick = async () => {
+  if (!window.showDirectoryPicker) return $("#folderLyrics").click();
+  let dir; try { dir = await window.showDirectoryPicker({ mode: "read", id: "music", startIn: "music" }); } catch { return; }
+  const files = []; const walk = async (d, depth) => { for await (const h of d.values()) { if (h.kind === "file") files.push(await h.getFile()); else if (depth < 8) await walk(h, depth + 1); } };
+  $("#status").textContent = "reading folder…"; $("#prog").hidden = false; await walk(dir, 0);
+  lyricsOnly(files.filter(f => AUDIO_RE.test(f.name)));
+};
+$("#folderLyrics").addEventListener("change", e => lyricsOnly([...e.target.files].filter(f => AUDIO_RE.test(f.name))).finally(() => { e.target.value = ""; }));
 
 let scanning = false, stopRequested = false;
 $("#stop").onclick = () => { stopRequested = true; $("#stop").textContent = "stopping after the current file…"; };
@@ -340,33 +349,7 @@ async function scan(all) {
   // words anywhere, so the lyrics pass runs on its own from the fingerprints
   // remembered last time. Returning here is what made a fully scanned folder
   // say "nothing new" and do nothing.
-  if (!files.length) {
-    // Everything is indexed by sound; some of it may still have no words. Match
-    // by TAGS — a few hundred header bytes per file — so nothing is decoded
-    // just to find out. The stored fingerprints are not needed and most of
-    // these files predate them anyway.
-    $("#status").textContent = `All ${audio.length} audio files here are already indexed by sound. Reading tags to see which have no words…`;
-    const tagged = [];
-    for (const f of audio) { const t = (await readTags(f)) || guessFromName(f.name); tagged.push({ artist: t.artist, title: t.title }); }
-    const byIndex = new Map();
-    for (let i = 0; i < tagged.length; i += 2000) {
-      const r = await post("/api/needs_lyrics_by_name", { tracks: tagged.slice(i, i + 2000) }).catch(() => null);
-      for (const n of (r && r.need) || []) byIndex.set(n.i + i, n.fp_hash);
-    }
-    const heard = loadHeard();
-    const only = new Map(), todo = [];
-    for (const [i, h] of byIndex) { if (!heard.has(h)) { only.set(h, audio[i]); todo.push(h); } }
-    if (!todo.length) { $("#status").textContent = `Nothing to do — all ${audio.length} files are indexed, and every one either has words or has none to find.`; return; }
-    // the fingerprint module has to exist before anything is fingerprinted —
-    // this path used to skip straight past the worker's init and every track
-    // failed on __wbindgen_free
-    try { await ask({ type: "init_fp" }); }
-    catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
-    scanning = true; stopRequested = false;
-    await hearLyricsPass(only, todo);
-    scanning = false;
-    return;
-  }
+  if (!files.length) return lyricsOnly(audio);
   $("#bar").max = files.length; $("#bar").value = 0;
   let done = 0, sent = 0, ident = 0, failed = 0, known = 0, noEv = 0, current = "";
   const byHash = new Map();          // fp_hash -> File, for the lyrics pass
@@ -481,6 +464,33 @@ async function scan(all) {
 
 // ---- lyrics for the songs no database has words for -----------------------
 const log = m => { $("#log").textContent = (m + "\n" + $("#log").textContent).slice(0, 6000); };
+// WORDS WITHOUT RE-SCANNING. Matching on TAGS — a few hundred header bytes per
+// file — finds which tracks still have no words anywhere without decoding a
+// single one. That means this can run on its own, skipping the sound pass
+// entirely, which is what you want when a library is already indexed.
+async function lyricsOnly(audio) {
+  if (!audio.length) { $("#status").textContent = "No audio files in that folder."; return; }
+  $("#prog").hidden = false;
+  $("#status").textContent = `Reading tags from ${audio.length} files to see which have no words…`;
+  const tagged = [];
+  for (const f of audio) { const t = (await readTags(f)) || guessFromName(f.name); tagged.push({ artist: t.artist, title: t.title }); }
+  const byIndex = new Map();
+  for (let i = 0; i < tagged.length; i += 2000) {
+    const r = await post("/api/needs_lyrics_by_name", { tracks: tagged.slice(i, i + 2000) }).catch(() => null);
+    for (const n of (r && r.need) || []) byIndex.set(n.i + i, n.fp_hash);
+  }
+  const heard = loadHeard();
+  const only = new Map(), todo = [];
+  for (const [i, h] of byIndex) { if (!heard.has(h)) { only.set(h, audio[i]); todo.push(h); } }
+  if (!todo.length) { $("#status").textContent = `Nothing to do — every one of those ${audio.length} files either has words already or has none to find.`; return; }
+  // the fingerprint module must exist before anything is fingerprinted
+  try { await ask({ type: "init_fp" }); }
+  catch (err) { $("#status").textContent = "could not start: " + err.message; return; }
+  scanning = true; stopRequested = false;
+  await hearLyricsPass(only, todo);
+  scanning = false;
+}
+
 const LYR_KEY = "describesong.heard.v1";
 const loadHeard = () => { try { return new Set(JSON.parse(localStorage.getItem(LYR_KEY) || "[]")); } catch { return new Set(); } };
 const saveHeard = s => { try { localStorage.setItem(LYR_KEY, JSON.stringify([...s])); } catch {} };

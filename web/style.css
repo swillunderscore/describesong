@@ -164,3 +164,7 @@ dialog { background: var(--b); color: var(--ink); border: 0; border-radius: var(
 .gpu.ok { color: var(--ink2); box-shadow: inset 0 0 0 1px color-mix(in oklab, currentColor 20%, transparent) }
 .gpu.no { background: var(--a); color: var(--ink) }
 .gpu code { font-size: 11.5px; padding: 1px 4px; border-radius: 4px; background: color-mix(in oklab, currentColor 14%, transparent) }
+
+/* the lyrics-only button: clearly secondary to the main scan above it */
+#pickLyrics { margin-top: 8px; background: var(--b); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in oklab, currentColor 22%, transparent) }
+#pickLyrics small { opacity: .72 }

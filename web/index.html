@@ -62,6 +62,8 @@
     <p><b>Your audio never leaves this computer.</b> What gets sent is 2&nbsp;KB of numbers, the artist and title, and one-way hashes of any words heard. Nothing here can receive audio.</p>
     <input id="folder" type="file" webkitdirectory multiple hidden>
     <button id="pick" class="scan">Scan a music folder<small>Files stay on this computer · about 1.5 s per track on a GPU</small></button>
+    <input id="folderLyrics" type="file" webkitdirectory multiple hidden>
+    <button id="pickLyrics" class="scan alt2">Only find lyrics<small>Skips the sound pass — for a library already added</small></button>
     <div id="gpu" class="gpu" hidden></div>
     <ul class="facts">
       <li><b>Leave the tab open.</b> Other tabs are fine; closing this one stops the scan.</li>
